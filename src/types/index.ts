@@ -110,17 +110,13 @@ export interface EventInvitation {
   allowedItemIds?: string[];
 }
 
-export interface ExpenseAuditLog {
+export interface DiscrepancyNote {
   id: string;
-  type: 'created' | 'edited' | 'deleted';
-  byUid: string;
-  byName: string;
-  timestamp: number;
-  formattedTimestamp: string; // "09:30 PM 15:11:2026"
-  changedFields?: string[];
-  previousValues?: Record<string, any>;
-  newValues?: Record<string, any>;
-  summary?: string;
+  authorUid: string;
+  authorName: string;
+  authorPhotoURL?: string;
+  text: string;
+  createdAt: number;
 }
 
 /**
@@ -157,7 +153,7 @@ export interface EventItem {
   lastModifiedBy?: string;
   lastModifiedByName?: string;
   lastModifiedAt?: number;
-  auditLogs?: ExpenseAuditLog[];
+  discrepancyNotes?: DiscrepancyNote[];
 }
 
 export interface ExpenseEntry {
@@ -178,13 +174,13 @@ export interface ExpenseEntry {
   createdBy: string;
   createdByName: string;
   createdAt: number;
-  lastModifiedBy: string;
-  lastModifiedByName: string;
-  lastModifiedAt: number;
+  lastModifiedBy?: string;
+  lastModifiedByName?: string;
+  lastModifiedAt?: number;
   deleted?: boolean;
   deletedAt?: number;
   deletedBy?: string;
-  auditLogs: ExpenseAuditLog[];
+  discrepancyNotes?: DiscrepancyNote[];
 }
 
 export type PaymentStatus = 'awaiting_confirmation' | 'completed' | 'rejected';
@@ -236,6 +232,7 @@ export interface SettlementEntry {
   confirmedByUid?: string;
   status: 'completed' | 'reversed';
   note?: string;
+  discrepancyNotes?: DiscrepancyNote[];
 }
 
 export type NotificationType =

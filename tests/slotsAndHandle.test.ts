@@ -121,9 +121,9 @@ describe('Individual Person Slots & Handle Renaming', () => {
     expect(migratedItem?.shares?.[slot.id]).toBeUndefined();
   });
 
-  it('should update category name and record audit log', async () => {
+  it('should update category name by creator', async () => {
     const eventId = await dataService.createEvent('Food Fest', mockUser);
-    const itemId = await dataService.createItem(eventId, 'Snacks');
+    const itemId = await dataService.createItem(eventId, 'Snacks', mockUser);
     await dataService.convertItemToCategory(eventId, itemId, mockUser);
 
     // Rename category to "Evening Snacks & Chai"
@@ -133,7 +133,5 @@ describe('Individual Person Slots & Handle Renaming', () => {
     const updated = items.find((i) => i.id === itemId);
     expect(updated?.name).toBe('Evening Snacks & Chai');
     expect(updated?.emoji).toBe('☕');
-    expect(updated?.auditLogs?.length).toBeGreaterThan(0);
-    expect(updated?.auditLogs?.[updated.auditLogs.length - 1].summary).toContain('Category renamed');
   });
 });

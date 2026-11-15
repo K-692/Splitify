@@ -84,7 +84,6 @@ describe('Financial Calculations Engine', () => {
       lastModifiedBy: 'uidA',
       lastModifiedByName: 'A',
       lastModifiedAt: 100,
-      auditLogs: [],
     };
 
     const expense2: ExpenseEntry = {
@@ -104,7 +103,6 @@ describe('Financial Calculations Engine', () => {
       lastModifiedBy: 'uidB',
       lastModifiedByName: 'B',
       lastModifiedAt: 200,
-      auditLogs: [],
     };
 
     const overview = calculateEventFinancialOverview(members, [expense1, expense2], [], 'uidA');
@@ -168,7 +166,6 @@ describe('Financial Calculations Engine', () => {
       lastModifiedBy: 'uidA',
       lastModifiedByName: 'A',
       lastModifiedAt: 100,
-      auditLogs: [],
     };
 
     // Before settlement
@@ -277,7 +274,6 @@ describe('Financial Calculations Engine', () => {
       lastModifiedBy: 'uidB',
       lastModifiedByName: 'B',
       lastModifiedAt: 210,
-      auditLogs: [],
     };
 
     const overview = calculateEventFinancialOverview(

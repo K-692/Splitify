@@ -8,6 +8,7 @@ import {
   ExpenseEntry,
   SettlementEntry,
   PaymentConfirmation,
+  DiscrepancyNote,
 } from '@/types';
 import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
@@ -26,6 +27,7 @@ import { ConfirmPaymentReceiptModal } from '@/components/dashboard/ConfirmPaymen
 import { BulkDeleteModal } from '@/components/expenses/BulkDeleteModal';
 import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { SlotsModal } from '@/components/events/SlotsModal';
+import { DiscrepancyNotesModal } from '@/components/expenses/DiscrepancyNotesModal';
 import {
   Plus,
   ChevronDown,
@@ -35,7 +37,7 @@ import {
   Users,
   CheckSquare,
   Square,
-  History,
+  MessageSquare,
   BellRing,
   CheckCircle,
   CheckCircle2,
@@ -104,7 +106,12 @@ export const EventDetailsPage: React.FC = () => {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [expandedAuditLogs, setExpandedAuditLogs] = useState<Record<string, boolean>>({});
+  const [activeDiscrepancyTarget, setActiveDiscrepancyTarget] = useState<{
+    type: 'item' | 'expense' | 'settlement';
+    id: string;
+    name: string;
+    notes: DiscrepancyNote[];
+  } | null>(null);
   const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
   const [sendingReminders, setSendingReminders] = useState<Record<string, boolean>>({});
 
@@ -162,6 +169,17 @@ export const EventDetailsPage: React.FC = () => {
       event.slots || {}
     );
   }, [event, expenses, settlements, user?.uid, items]);
+
+  // Check if all dues are settled among all people for this event
+  const isAllSettled = useMemo(() => {
+    if (!financialOverview) return false;
+    const hasAnyExpenses = expenses.some((e) => !e.deleted) || items.some((i) => !i.deleted);
+    return (
+      hasAnyExpenses &&
+      financialOverview.settlementSuggestions.length === 0 &&
+      Object.values(financialOverview.memberSummaries).every((m) => m.netBalanceMinor === 0)
+    );
+  }, [financialOverview, expenses, items]);
 
   const getPersonDisplayName = (id: string): string => {
     if (!id || !event) return '';
@@ -251,10 +269,6 @@ export const EventDetailsPage: React.FC = () => {
     setCollapsedItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
   };
 
-  const handleToggleAuditLog = (id: string) => {
-    setExpandedAuditLogs((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const handleRenameEvent = async () => {
     if (!event || !user || !newEventName.trim()) return;
     try {
@@ -263,6 +277,67 @@ export const EventDetailsPage: React.FC = () => {
       showToast('Event renamed successfully');
     } catch (err: any) {
       alert(err.message || 'Failed to rename event');
+    }
+  };
+
+  const handleAddDiscrepancyNote = async (text: string) => {
+    if (!event || !user || !activeDiscrepancyTarget) return;
+    try {
+      const newNote = await dataService.addDiscrepancyNote(
+        event.id,
+        activeDiscrepancyTarget.type,
+        activeDiscrepancyTarget.id,
+        text,
+        user
+      );
+      setActiveDiscrepancyTarget((prev) =>
+        prev ? { ...prev, notes: [...prev.notes, newNote] } : null
+      );
+      showToast('Discrepancy note added');
+    } catch (err: any) {
+      alert(err.message || 'Failed to add discrepancy note');
+    }
+  };
+
+  const handleDeleteDiscrepancyNote = async (noteId: string) => {
+    if (!event || !user || !activeDiscrepancyTarget) return;
+    try {
+      await dataService.deleteDiscrepancyNote(
+        event.id,
+        activeDiscrepancyTarget.type,
+        activeDiscrepancyTarget.id,
+        noteId,
+        user.uid
+      );
+      setActiveDiscrepancyTarget((prev) =>
+        prev
+          ? {
+              ...prev,
+              notes: prev.notes.filter((n) => n.id !== noteId),
+            }
+          : null
+      );
+      showToast('Discrepancy note removed');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove note');
+    }
+  };
+
+  const handleDeleteSettlement = async (settlement: SettlementEntry) => {
+    if (!event || !user) return;
+    const fromName = getPersonDisplayName(settlement.payerUid) || settlement.payerName || 'Member';
+    const toName = getPersonDisplayName(settlement.receiverUid) || settlement.receiverName || 'Member';
+    if (
+      !window.confirm(
+        `Delete settlement payment of ${formatCurrency(settlement.amountMinor, currency)} from ${fromName} to ${toName}?`
+      )
+    )
+      return;
+    try {
+      await dataService.deleteSettlement(event.id, settlement.id, user, isAllSettled);
+      showToast('Settlement deleted');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete settlement');
     }
   };
 
@@ -276,7 +351,7 @@ export const EventDetailsPage: React.FC = () => {
     if (!window.confirm(msg)) return;
 
     try {
-      await dataService.deleteItem(event.id, item.id, user);
+      await dataService.deleteItem(event.id, item.id, user, isAllSettled);
       showToast('Expense item deleted');
     } catch (err: any) {
       alert(err.message || 'Failed to delete item');
@@ -412,7 +487,7 @@ export const EventDetailsPage: React.FC = () => {
   ) => {
     if (!event || !user) return;
     try {
-      const categoryId = await dataService.createItem(event.id, categoryName);
+      const categoryId = await dataService.createItem(event.id, categoryName, user);
       await dataService.convertItemToCategory(event.id, categoryId, user);
       for (const sub of subitems) {
         await dataService.createExpense(
@@ -466,7 +541,7 @@ export const EventDetailsPage: React.FC = () => {
     setIsBulkDeleting(true);
     try {
       const ids = selectedExpenses.map((e) => e.id);
-      await dataService.bulkDeleteExpenses(event.id, ids, user, event.members);
+      await dataService.bulkDeleteExpenses(event.id, ids, user, event.members, isAllSettled);
       setSelectedExpenseIds({});
       setIsBulkDeleteModalOpen(false);
       showToast(`Deleted ${ids.length} expense(s)`);
@@ -481,7 +556,7 @@ export const EventDetailsPage: React.FC = () => {
     if (!event || !user) return;
     if (!window.confirm(`Delete expense "${expense.name}"?`)) return;
     try {
-      await dataService.deleteExpense(event.id, expense.id, user, event.members);
+      await dataService.deleteExpense(event.id, expense.id, user, event.members, isAllSettled);
       showToast('Expense deleted');
     } catch (err: any) {
       alert(err.message || 'Failed to delete expense');
@@ -1155,23 +1230,49 @@ export const EventDetailsPage: React.FC = () => {
                           Add Subitem
                         </Button>
 
+                        {/* Discrepancy Notes */}
                         <button
                           type="button"
-                          onClick={() => handleOpenEditCategory(item)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          title="Edit Category"
+                          onClick={() =>
+                            setActiveDiscrepancyTarget({
+                              type: 'item',
+                              id: item.id,
+                              name: item.name,
+                              notes: item.discrepancyNotes || [],
+                            })
+                          }
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1"
+                          title="Discrepancy notes"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <MessageSquare className="w-4 h-4" />
+                          {(item.discrepancyNotes?.length || 0) > 0 && (
+                            <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
+                              {item.discrepancyNotes!.length}
+                            </span>
+                          )}
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(item)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
-                          title="Delete Category"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {user?.uid === item.createdBy && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditCategory(item)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Edit Category"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        {(user?.uid === item.createdBy || isAllSettled) && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                            title="Delete Category"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1185,7 +1286,11 @@ export const EventDetailsPage: React.FC = () => {
                         ) : (
                           itemExpenses.map((expense) => {
                             const isSelected = Boolean(selectedExpenseIds[expense.id]);
-                            const isAuditExpanded = Boolean(expandedAuditLogs[expense.id]);
+                            const isSubitemOwner =
+                              user?.uid === expense.createdBy ||
+                              (!expense.createdBy && user?.uid === expense.paidBy);
+                            const canEditSubitem = isSubitemOwner;
+                            const canDeleteSubitem = isSubitemOwner || isAllSettled;
 
                             return (
                               <div
@@ -1198,17 +1303,19 @@ export const EventDetailsPage: React.FC = () => {
                               >
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleSelectExpense(expense.id)}
-                                      className="text-slate-400 hover:text-teal-600 transition-colors"
-                                    >
-                                      {isSelected ? (
-                                        <CheckSquare className="w-4 h-4 text-teal-500" />
-                                      ) : (
-                                        <Square className="w-4 h-4" />
-                                      )}
-                                    </button>
+                                    {canDeleteSubitem && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleSelectExpense(expense.id)}
+                                        className="text-slate-400 hover:text-teal-600 transition-colors"
+                                      >
+                                        {isSelected ? (
+                                          <CheckSquare className="w-4 h-4 text-teal-500" />
+                                        ) : (
+                                          <Square className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                    )}
 
                                     <span className="text-xl flex-shrink-0">{expense.emoji}</span>
 
@@ -1237,61 +1344,61 @@ export const EventDetailsPage: React.FC = () => {
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center gap-3 flex-shrink-0">
-                                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className="text-base font-extrabold text-slate-900 dark:text-white mr-1">
                                       {formatCurrency(expense.costMinor, currency)}
                                     </span>
 
+                                    {/* Discrepancy Notes */}
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        setEditingExpense(expense);
-                                        setEditingItem(null);
-                                        setTargetCategoryItemId(item.id);
-                                        setIsExpenseModalOpen(true);
-                                      }}
-                                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      title="Edit Subitem"
+                                      onClick={() =>
+                                        setActiveDiscrepancyTarget({
+                                          type: 'expense',
+                                          id: expense.id,
+                                          name: expense.name,
+                                          notes: expense.discrepancyNotes || [],
+                                        })
+                                      }
+                                      className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+                                      title="Discrepancy notes"
                                     >
-                                      <Edit2 className="w-3.5 h-3.5" />
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                      {(expense.discrepancyNotes?.length || 0) > 0 && (
+                                        <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
+                                          {expense.discrepancyNotes!.length}
+                                        </span>
+                                      )}
                                     </button>
 
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteSingleExpense(expense)}
-                                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
-                                      title="Delete Subitem"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    {canEditSubitem && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingExpense(expense);
+                                          setEditingItem(null);
+                                          setTargetCategoryItemId(item.id);
+                                          setIsExpenseModalOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        title="Edit Subitem"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
 
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleAuditLog(expense.id)}
-                                      className="p-1.5 text-slate-400 hover:text-teal-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      title="Audit history"
-                                    >
-                                      <History className="w-3.5 h-3.5" />
-                                    </button>
+                                    {canDeleteSubitem && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSingleExpense(expense)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
+                                        title="Delete Subitem"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
-
-                                {/* Audit Logs view */}
-                                {isAuditExpanded && expense.auditLogs && (
-                                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 space-y-1">
-                                    <span className="font-bold text-slate-600 dark:text-slate-300 block mb-1">
-                                      Audit Trail:
-                                    </span>
-                                    {expense.auditLogs.map((log) => (
-                                      <div key={log.id} className="flex items-center gap-2">
-                                        <span className="text-slate-400 font-mono">
-                                          {log.formattedTimestamp}
-                                        </span>
-                                        <span>— {log.summary}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                             );
                           })
@@ -1342,6 +1449,12 @@ export const EventDetailsPage: React.FC = () => {
                         sortEntriesChronologicalDesc(settlements).map((s) => {
                           const fromName = getFirstName(s.payerName || event.members[s.payerUid]?.displayName || s.payerUid);
                           const toName = getFirstName(s.receiverName || event.members[s.receiverUid]?.displayName || s.receiverUid);
+                          const canDeleteSettlement =
+                            user?.uid === s.recordedBy ||
+                            user?.uid === s.payerUid ||
+                            user?.uid === s.receiverUid ||
+                            isAllSettled;
+
                           return (
                             <div
                               key={s.id}
@@ -1359,9 +1472,44 @@ export const EventDetailsPage: React.FC = () => {
                                   </strong>
                                 </span>
                               </div>
-                              <span className="font-extrabold text-slate-900 dark:text-white">
-                                {formatCurrency(s.amountMinor, currency)}
-                              </span>
+
+                              <div className="flex items-center gap-2.5">
+                                <span className="font-extrabold text-slate-900 dark:text-white">
+                                  {formatCurrency(s.amountMinor, currency)}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setActiveDiscrepancyTarget({
+                                      type: 'settlement',
+                                      id: s.id,
+                                      name: `Settlement: ${fromName} paid ${toName} (${formatCurrency(s.amountMinor, currency)})`,
+                                      notes: s.discrepancyNotes || [],
+                                    })
+                                  }
+                                  className="p-1 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+                                  title="Discrepancy notes"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  {(s.discrepancyNotes?.length || 0) > 0 && (
+                                    <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
+                                      {s.discrepancyNotes!.length}
+                                    </span>
+                                  )}
+                                </button>
+
+                                {canDeleteSettlement && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSettlement(s)}
+                                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                                    title="Delete settlement"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           );
                         })
@@ -1374,7 +1522,10 @@ export const EventDetailsPage: React.FC = () => {
               // ----------------------------------------------------
               // C. STANDALONE ITEM (Item-First Direct Expense)
               // ----------------------------------------------------
-              const isAuditExpanded = Boolean(expandedAuditLogs[item.id]);
+              const isItemOwner =
+                user?.uid === item.createdBy || (!item.createdBy && user?.uid === item.paidBy);
+              const canEditItem = isItemOwner;
+              const canDeleteItem = isItemOwner || isAllSettled;
 
               return (
                 <div
@@ -1426,76 +1577,76 @@ export const EventDetailsPage: React.FC = () => {
                     </div>
 
                     {/* Right: Amount & Actions */}
-                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                      <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+                    <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                      <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mr-1">
                         {formatCurrency(item.costMinor || 0, currency)}
                       </span>
 
-                      {/* Convert to category button */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleConvertToCategory(item.id)}
-                        title="Convert to Category so you can add subitems under this expense"
-                        className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5"
-                      >
-                        <FolderPlus className="w-3.5 h-3.5 mr-1" />
-                        Add Subitems
-                      </Button>
-
-                      {/* Edit Button */}
+                      {/* Discrepancy Notes */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditingItem(item);
-                          setEditingExpense(null);
-                          setTargetCategoryItemId(null);
-                          setIsExpenseModalOpen(true);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title="Edit Expense"
+                        onClick={() =>
+                          setActiveDiscrepancyTarget({
+                            type: 'item',
+                            id: item.id,
+                            name: item.name,
+                            notes: item.discrepancyNotes || [],
+                          })
+                        }
+                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+                        title="Discrepancy notes"
                       >
-                        <Edit2 className="w-4 h-4" />
+                        <MessageSquare className="w-4 h-4" />
+                        {(item.discrepancyNotes?.length || 0) > 0 && (
+                          <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
+                            {item.discrepancyNotes!.length}
+                          </span>
+                        )}
                       </button>
 
-                      {/* Delete Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteItem(item)}
-                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
-                        title="Delete Expense"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canEditItem && (
+                        <>
+                          {/* Convert to category button */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleConvertToCategory(item.id)}
+                            title="Convert to Category so you can add subitems under this expense"
+                            className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5"
+                          >
+                            <FolderPlus className="w-3.5 h-3.5 mr-1" />
+                            Add Subitems
+                          </Button>
 
-                      {/* Audit History Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAuditLog(item.id)}
-                        className="p-1.5 text-slate-400 hover:text-teal-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title="Audit trail"
-                      >
-                        <History className="w-4 h-4" />
-                      </button>
+                          {/* Edit Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingItem(item);
+                              setEditingExpense(null);
+                              setTargetCategoryItemId(null);
+                              setIsExpenseModalOpen(true);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                            title="Edit Expense"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+
+                      {canDeleteItem && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteItem(item)}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
+                          title="Delete Expense"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  {/* Audit Trail Expanded */}
-                  {isAuditExpanded && item.auditLogs && (
-                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 space-y-1">
-                      <span className="font-bold text-slate-600 dark:text-slate-300 block mb-1">
-                        Audit Trail:
-                      </span>
-                      {item.auditLogs.map((log) => (
-                        <div key={log.id} className="flex items-center gap-2">
-                          <span className="text-slate-400 font-mono">
-                            {log.formattedTimestamp}
-                          </span>
-                          <span>— {log.summary}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -1867,7 +2018,7 @@ export const EventDetailsPage: React.FC = () => {
                   )
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Immutable record of all confirmed and completed payment settlements.
+                  Record of all confirmed and completed payment settlements.
                 </p>
               </div>
             </div>
@@ -1883,6 +2034,11 @@ export const EventDetailsPage: React.FC = () => {
                 ).map((s) => {
                   const fromName = getPersonDisplayName(s.payerUid) || s.payerName || 'Member';
                   const toName = getPersonDisplayName(s.receiverUid) || s.receiverName || 'Member';
+                  const canDeleteSettlement =
+                    user?.uid === s.recordedBy ||
+                    user?.uid === s.payerUid ||
+                    user?.uid === s.receiverUid ||
+                    isAllSettled;
 
                   return (
                     <div
@@ -1909,13 +2065,48 @@ export const EventDetailsPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <span className="font-extrabold text-sm text-slate-900 dark:text-white block">
-                          {formatCurrency(s.amountMinor, currency)}
-                        </span>
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                          Confirmed ✓
-                        </span>
+                      <div className="flex items-center gap-2.5">
+                        <div className="text-right">
+                          <span className="font-extrabold text-sm text-slate-900 dark:text-white block">
+                            {formatCurrency(s.amountMinor, currency)}
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            Confirmed ✓
+                          </span>
+                        </div>
+
+                        {/* Discrepancy Notes */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveDiscrepancyTarget({
+                              type: 'settlement',
+                              id: s.id,
+                              name: `Settlement: ${fromName} paid ${toName} (${formatCurrency(s.amountMinor, currency)})`,
+                              notes: s.discrepancyNotes || [],
+                            })
+                          }
+                          className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
+                          title="Discrepancy notes"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          {(s.discrepancyNotes?.length || 0) > 0 && (
+                            <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
+                              {s.discrepancyNotes!.length}
+                            </span>
+                          )}
+                        </button>
+
+                        {canDeleteSettlement && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSettlement(s)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                            title="Delete settlement"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2273,6 +2464,19 @@ export const EventDetailsPage: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Discrepancy Notes Modal */}
+      {activeDiscrepancyTarget && user && (
+        <DiscrepancyNotesModal
+          isOpen={Boolean(activeDiscrepancyTarget)}
+          onClose={() => setActiveDiscrepancyTarget(null)}
+          entryName={activeDiscrepancyTarget.name}
+          notes={activeDiscrepancyTarget.notes}
+          currentUser={user}
+          onAddNote={handleAddDiscrepancyNote}
+          onDeleteNote={handleDeleteDiscrepancyNote}
+        />
+      )}
     </div>
   );
 };

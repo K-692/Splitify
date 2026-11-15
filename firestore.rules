@@ -371,7 +371,7 @@ service cloud.firestore {
                'costMinor', 'paidBy', 'splitBy', 'participants', 'shares', 'comment',
                'expenseDate', 'expenseTime', 'occurredAt',
                'createdBy', 'createdByName', 'lastModifiedBy', 'lastModifiedByName',
-               'lastModifiedAt', 'auditLogs'
+               'lastModifiedAt', 'auditLogs', 'discrepancyNotes'
              ]) &&
              data.eventId == eventId &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
@@ -398,15 +398,15 @@ service cloud.firestore {
              (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 128)) &&
              (!('lastModifiedByName' in data) || (data.lastModifiedByName is string && data.lastModifiedByName.size() <= 100)) &&
              (!('lastModifiedAt' in data) || data.lastModifiedAt is number) &&
-             (!('auditLogs' in data) || (data.auditLogs is list && data.auditLogs.size() <= 200));
+             (!('auditLogs' in data) || (data.auditLogs is list && data.auditLogs.size() <= 200)) &&
+             (!('discrepancyNotes' in data) || (data.discrepancyNotes is list && data.discrepancyNotes.size() <= 100));
     }
 
     function isValidExpense(data, eventId) {
       return data.keys().hasAll([
                'eventId', 'itemId', 'name', 'emoji', 'costMinor',
                'paidBy', 'splitBy', 'participants', 'shares',
-               'createdBy', 'createdByName', 'createdAt',
-               'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt', 'auditLogs'
+               'createdBy', 'createdByName', 'createdAt'
              ]) &&
              data.keys().hasOnly([
                'id',
@@ -415,7 +415,7 @@ service cloud.firestore {
                'expenseDate', 'expenseTime', 'occurredAt',
                'createdBy', 'createdByName', 'createdAt',
                'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt', 'updatedAt',
-               'deleted', 'deletedAt', 'deletedBy', 'auditLogs'
+               'deleted', 'deletedAt', 'deletedBy', 'auditLogs', 'discrepancyNotes'
              ]) &&
              data.eventId == eventId &&
              data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128 &&
@@ -429,10 +429,11 @@ service cloud.firestore {
              data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
              data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
              data.createdAt is number &&
-             data.lastModifiedBy is string && data.lastModifiedBy.size() >= 1 && data.lastModifiedBy.size() <= 128 &&
-             data.lastModifiedByName is string && data.lastModifiedByName.size() >= 1 && data.lastModifiedByName.size() <= 100 &&
-             data.lastModifiedAt is number &&
-             data.auditLogs is list && data.auditLogs.size() <= 200 &&
+             (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 128)) &&
+             (!('lastModifiedByName' in data) || (data.lastModifiedByName is string && data.lastModifiedByName.size() <= 100)) &&
+             (!('lastModifiedAt' in data) || data.lastModifiedAt is number) &&
+             (!('auditLogs' in data) || (data.auditLogs is list && data.auditLogs.size() <= 200)) &&
+             (!('discrepancyNotes' in data) || (data.discrepancyNotes is list && data.discrepancyNotes.size() <= 100)) &&
              (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
              (!('updatedAt' in data) || data.updatedAt is number) &&
              (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
@@ -456,7 +457,8 @@ service cloud.firestore {
                'recordedBy', 'recordedByName', 'createdAt',
                'formattedTimestamp', 'status', 'note',
                'paymentConfirmationId', 'paymentMethod', 'paymentReference', 'paymentNote',
-               'paidDate', 'paidTime', 'occurredAt', 'confirmedAt', 'confirmedByUid'
+               'paidDate', 'paidTime', 'occurredAt', 'confirmedAt', 'confirmedByUid',
+               'discrepancyNotes'
              ]) &&
              data.eventId == eventId &&
              data.payerUid is string && data.payerUid.size() >= 1 && data.payerUid.size() <= 128 &&
@@ -481,7 +483,8 @@ service cloud.firestore {
              (!('paidTime' in data) || (data.paidTime is string && data.paidTime.size() <= 50)) &&
              (!('occurredAt' in data) || data.occurredAt is number) &&
              (!('confirmedAt' in data) || data.confirmedAt is number) &&
-             (!('confirmedByUid' in data) || (data.confirmedByUid is string && data.confirmedByUid.size() <= 128));
+             (!('confirmedByUid' in data) || (data.confirmedByUid is string && data.confirmedByUid.size() <= 128)) &&
+             (!('discrepancyNotes' in data) || (data.discrepancyNotes is list && data.discrepancyNotes.size() <= 100));
     }
 
     function isValidPaymentConfirmation(data, eventId) {
@@ -846,7 +849,7 @@ service cloud.firestore {
                          areImmutableFieldsUnchanged(['eventId', 'payerUid', 'receiverUid', 'amountMinor', 'createdAt']) &&
                          isValidSettlement(request.resource.data, eventId);
 
-        allow delete: if false; // immutable settlement record
+        allow delete: if isEventMember(eventId);
       }
     }
   }

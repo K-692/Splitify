@@ -61,7 +61,6 @@ describe('generatePlainTextExpenseReport', () => {
       lastModifiedBy: 'u2',
       lastModifiedByName: 'Rahul',
       lastModifiedAt: 1773000000000,
-      auditLogs: [],
     },
   ];
 

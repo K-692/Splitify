@@ -41,7 +41,7 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
 
         <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
           All member contributions, shares, and settlement suggestions will be automatically
-          recalculated immediately. Historical audit records will be securely preserved.
+          recalculated immediately.
         </p>
 
         <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">

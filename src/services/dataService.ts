@@ -29,6 +29,7 @@ import {
   EventSlot,
   EventInvitationLink,
   EventMember,
+  DiscrepancyNote,
 } from '@/types';
 import { getEmojiForName } from '@/utils/emoji';
 import { formatAuditTimestamp, getTodayLocalDateString } from '@/utils/date';
@@ -67,6 +68,13 @@ function getLocal<T>(key: string, fallback: T): T {
 function setLocal<T>(key: string, value: T): void {
   localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
   window.dispatchEvent(new CustomEvent('splitify_data_changed', { detail: { key } }));
+}
+
+function isEntryCreatorOrOwner(entry: { createdBy?: string; paidBy?: string } | null | undefined, userUid: string): boolean {
+  if (!entry) return true;
+  if (entry.createdBy) return entry.createdBy === userUid;
+  if (entry.paidBy) return entry.paidBy === userUid;
+  return true;
 }
 
 export const dataService = {
@@ -382,7 +390,7 @@ export const dataService = {
     );
   },
 
-  async createItem(eventId: string, name: string): Promise<string> {
+  async createItem(eventId: string, name: string, user?: UserProfile): Promise<string> {
     const isSettlement = name.toLowerCase().includes('settlement');
     const emoji = isSettlement ? '💸' : getEmojiForName(name);
 
@@ -391,6 +399,8 @@ export const dataService = {
       name,
       emoji,
       isSettlementsItem: isSettlement,
+      createdBy: user?.uid,
+      createdByName: user ? getFirstName(user.displayName) : undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       deleted: false,
@@ -433,22 +443,11 @@ export const dataService = {
         : (customShares || {});
 
     const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
     const authorFirstName = getFirstName(user.displayName);
     const expenseDate = params.expenseDate || getTodayLocalDateString();
     const expenseTime = params.expenseTime || '12:00';
     const parsedOccurred = new Date(`${expenseDate}T${expenseTime}`).getTime();
     const occurredAt = params.occurredAt || (!isNaN(parsedOccurred) ? parsedOccurred : now);
-
-    const initialAuditLog = {
-      id: 'log_' + now,
-      type: 'created' as const,
-      byUid: user.uid,
-      byName: authorFirstName,
-      timestamp: now,
-      formattedTimestamp,
-      summary: `Created expense item "${name}" for ${(costMinor / 100).toFixed(2)}`,
-    };
 
     const newItem: Omit<EventItem, 'id'> = {
       eventId,
@@ -469,11 +468,7 @@ export const dataService = {
       createdByName: authorFirstName,
       createdAt: now,
       updatedAt: now,
-      lastModifiedBy: user.uid,
-      lastModifiedByName: authorFirstName,
-      lastModifiedAt: now,
       deleted: false,
-      auditLogs: [initialAuditLog],
     };
 
     let itemId: string;
@@ -509,26 +504,19 @@ export const dataService = {
 
   async convertItemToCategory(eventId: string, itemId: string, user: UserProfile): Promise<void> {
     const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
 
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx === -1) throw new Error('Item not found');
       const item = items[idx];
+      const isOwner = isEntryCreatorOrOwner(item, user.uid);
+      if (!isOwner) {
+        throw new Error('Only the creator can convert this item.');
+      }
       if (item.isCategory) return;
 
       if (item.costMinor && item.costMinor > 0) {
-        const subitemAuditLog = {
-          id: 'log_' + now,
-          type: 'created' as const,
-          byUid: user.uid,
-          byName: user.displayName,
-          timestamp: now,
-          formattedTimestamp,
-          summary: `Converted from standalone item to category subitem`,
-        };
-
         const newSubitem: ExpenseEntry = {
           id: 'exp_' + now,
           eventId,
@@ -544,11 +532,7 @@ export const dataService = {
           createdBy: item.createdBy || user.uid,
           createdByName: item.createdByName || user.displayName,
           createdAt: item.createdAt || now,
-          lastModifiedBy: user.uid,
-          lastModifiedByName: user.displayName,
-          lastModifiedAt: now,
           deleted: false,
-          auditLogs: [...(item.auditLogs || []), subitemAuditLog],
         };
 
         const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
@@ -564,10 +548,7 @@ export const dataService = {
         participants: [],
         shares: {},
         comment: '',
-        updatedAt: now,
-        lastModifiedAt: now,
-        lastModifiedBy: user.uid,
-        lastModifiedByName: user.displayName,
+        updatedAt: Date.now(),
       };
       setLocal(`items_${eventId}`, items);
       return;
@@ -577,19 +558,13 @@ export const dataService = {
     const snap = await getDoc(itemRef);
     if (!snap.exists()) throw new Error('Item not found');
     const existing = snap.data() as EventItem;
+    const isOwner = isEntryCreatorOrOwner(existing, user.uid);
+    if (!isOwner) {
+      throw new Error('Only the creator can convert this item.');
+    }
     if (existing.isCategory) return;
 
     if (existing.costMinor && existing.costMinor > 0) {
-      const subitemAuditLog = {
-        id: 'log_' + now,
-        type: 'created' as const,
-        byUid: user.uid,
-        byName: user.displayName,
-        timestamp: now,
-        formattedTimestamp,
-        summary: `Converted from standalone item to category subitem`,
-      };
-
       const newSubitem: Omit<ExpenseEntry, 'id'> = {
         eventId,
         itemId,
@@ -604,11 +579,7 @@ export const dataService = {
         createdBy: existing.createdBy || user.uid,
         createdByName: existing.createdByName || user.displayName,
         createdAt: existing.createdAt || now,
-        lastModifiedBy: user.uid,
-        lastModifiedByName: user.displayName,
-        lastModifiedAt: now,
         deleted: false,
-        auditLogs: [...(existing.auditLogs || []), subitemAuditLog],
       };
 
       await addDoc(collection(db, 'events', eventId, 'expenses'), newSubitem);
@@ -622,9 +593,6 @@ export const dataService = {
       shares: {},
       comment: '',
       updatedAt: now,
-      lastModifiedAt: now,
-      lastModifiedBy: user.uid,
-      lastModifiedByName: user.displayName,
     });
   },
 
@@ -646,11 +614,15 @@ export const dataService = {
     user: UserProfile,
     eventMembers: Record<string, any>
   ): Promise<void> {
-    const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
     const authorFirstName = getFirstName(user.displayName);
 
     const applyUpdates = (current: EventItem): EventItem => {
+      // Creator ownership check
+      const isOwner = isEntryCreatorOrOwner(current, user.uid);
+      if (!isOwner) {
+        throw new Error('Only the creator can edit this expense item.');
+      }
+
       const name = updates.name !== undefined ? updates.name : current.name;
       const costMinor = updates.costMinor !== undefined ? updates.costMinor : (current.costMinor || 0);
       const paidBy = updates.paidBy !== undefined ? updates.paidBy : (current.paidBy || '');
@@ -673,54 +645,6 @@ export const dataService = {
           ? calculateEqualShares(costMinor, participants)
           : (updates.customShares || current.shares || {});
 
-      const changedFields: string[] = [];
-      const previousValues: Record<string, any> = {};
-      const newValues: Record<string, any> = {};
-
-      if (updates.name && updates.name !== current.name) {
-        changedFields.push('name');
-        previousValues.name = current.name;
-        newValues.name = updates.name;
-      }
-      if (updates.costMinor !== undefined && updates.costMinor !== current.costMinor) {
-        changedFields.push('cost');
-        previousValues.costMinor = current.costMinor;
-        newValues.costMinor = updates.costMinor;
-      }
-      if (updates.paidBy && updates.paidBy !== current.paidBy) {
-        changedFields.push('payer');
-        previousValues.paidBy = current.paidBy;
-        newValues.paidBy = updates.paidBy;
-      }
-      if (updates.splitBy && updates.splitBy !== current.splitBy) {
-        changedFields.push('split mode');
-        previousValues.splitBy = current.splitBy;
-        newValues.splitBy = updates.splitBy;
-      }
-      if (updates.participants) {
-        changedFields.push('participants');
-        previousValues.participants = current.participants;
-        newValues.participants = updates.participants;
-      }
-      if (updates.expenseDate && updates.expenseDate !== current.expenseDate) {
-        changedFields.push('date');
-        previousValues.expenseDate = current.expenseDate;
-        newValues.expenseDate = updates.expenseDate;
-      }
-
-      const auditLog = {
-        id: 'log_' + now,
-        type: 'edited' as const,
-        byUid: user.uid,
-        byName: authorFirstName,
-        timestamp: now,
-        formattedTimestamp,
-        changedFields,
-        previousValues,
-        newValues,
-        summary: `Edited by ${authorFirstName} at ${formattedTimestamp}`,
-      };
-
       return {
         ...current,
         name,
@@ -734,11 +658,7 @@ export const dataService = {
         expenseTime,
         occurredAt,
         comment,
-        lastModifiedBy: user.uid,
-        lastModifiedByName: authorFirstName,
-        lastModifiedAt: now,
-        updatedAt: now,
-        auditLogs: [...(current.auditLogs || []), auditLog],
+        updatedAt: Date.now(),
       };
     };
 
@@ -784,34 +704,18 @@ export const dataService = {
   ): Promise<void> {
     const emoji = customEmoji || getEmojiForName(newName);
     const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
-    const authorFirstName = user ? getFirstName(user.displayName) : 'Member';
 
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx !== -1) {
-        const prevName = items[idx].name;
+        const existing = items[idx];
+        if (user && existing.createdBy && existing.createdBy !== user.uid && (!existing.paidBy || existing.paidBy !== user.uid)) {
+          throw new Error('Only the creator can edit this category.');
+        }
         items[idx].name = newName;
         items[idx].emoji = emoji;
         items[idx].updatedAt = now;
-        if (user) {
-          items[idx].lastModifiedBy = user.uid;
-          items[idx].lastModifiedByName = authorFirstName;
-          items[idx].lastModifiedAt = now;
-          const auditLog = {
-            id: 'log_' + now,
-            type: 'edited' as const,
-            byUid: user.uid,
-            byName: authorFirstName,
-            timestamp: now,
-            formattedTimestamp,
-            summary: `Category renamed from "${prevName}" to "${newName}"`,
-            previousValues: { name: prevName },
-            newValues: { name: newName },
-          };
-          items[idx].auditLogs = [...(items[idx].auditLogs || []), auditLog];
-        }
         setLocal(`items_${eventId}`, items);
       }
       return;
@@ -820,7 +724,9 @@ export const dataService = {
     const itemRef = doc(db, 'events', eventId, 'items', itemId);
     const snap = await getDoc(itemRef);
     const existing = snap.exists() ? (snap.data() as EventItem) : null;
-    const prevName = existing ? existing.name : '';
+    if (user && existing && existing.createdBy && existing.createdBy !== user.uid && (!existing.paidBy || existing.paidBy !== user.uid)) {
+      throw new Error('Only the creator can edit this category.');
+    }
 
     const updatePayload: any = {
       name: newName,
@@ -828,33 +734,25 @@ export const dataService = {
       updatedAt: now,
     };
 
-    if (user) {
-      updatePayload.lastModifiedBy = user.uid;
-      updatePayload.lastModifiedByName = authorFirstName;
-      updatePayload.lastModifiedAt = now;
-      const auditLog = {
-        id: 'log_' + now,
-        type: 'edited' as const,
-        byUid: user.uid,
-        byName: authorFirstName,
-        timestamp: now,
-        formattedTimestamp,
-        summary: `Category renamed from "${prevName}" to "${newName}"`,
-        previousValues: { name: prevName },
-        newValues: { name: newName },
-      };
-      updatePayload.auditLogs = [...(existing?.auditLogs || []), auditLog];
-    }
-
     await updateDoc(itemRef, sanitizeForFirestore(updatePayload));
   },
 
-  async deleteItem(eventId: string, itemId: string, user: UserProfile): Promise<void> {
+  async deleteItem(
+    eventId: string,
+    itemId: string,
+    user: UserProfile,
+    isAllSettled: boolean = false
+  ): Promise<void> {
     // Delete item and soft-delete all active subitems inside this item
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx !== -1) {
+        const item = items[idx];
+        const isOwner = isEntryCreatorOrOwner(item, user.uid);
+        if (!isOwner && !isAllSettled) {
+          throw new Error('Only the creator can delete this item until all event dues are settled.');
+        }
         items[idx].deleted = true;
         setLocal(`items_${eventId}`, items);
       }
@@ -866,22 +764,23 @@ export const dataService = {
           exp.deleted = true;
           exp.deletedAt = Date.now();
           exp.deletedBy = user.uid;
-          exp.auditLogs.push({
-            id: 'log_' + Date.now(),
-            type: 'deleted',
-            byUid: user.uid,
-            byName: user.displayName,
-            timestamp: Date.now(),
-            formattedTimestamp: formatAuditTimestamp(Date.now()),
-            summary: `Deleted with parent item`,
-          });
         }
       }
       setLocal(`expenses_${eventId}`, expenses);
       return;
     }
 
-    await updateDoc(doc(db, 'events', eventId, 'items', itemId), {
+    const itemRef = doc(db, 'events', eventId, 'items', itemId);
+    const itemSnap = await getDoc(itemRef);
+    if (itemSnap.exists()) {
+      const item = itemSnap.data() as EventItem;
+      const isOwner = isEntryCreatorOrOwner(item, user.uid);
+      if (!isOwner && !isAllSettled) {
+        throw new Error('Only the creator can delete this item until all event dues are settled.');
+      }
+    }
+
+    await updateDoc(itemRef, {
       deleted: true,
       updatedAt: Date.now(),
     });
@@ -895,9 +794,6 @@ export const dataService = {
         deleted: true,
         deletedAt: Date.now(),
         deletedBy: user.uid,
-        lastModifiedBy: user.uid,
-        lastModifiedByName: user.displayName,
-        lastModifiedAt: Date.now(),
       });
     });
     await batch.commit();
@@ -1010,22 +906,11 @@ export const dataService = {
       : (customShares || {});
 
     const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
     const authorFirstName = getFirstName(user.displayName);
     const expenseDate = params.expenseDate || getTodayLocalDateString();
     const expenseTime = params.expenseTime || '12:00';
     const parsedOccurred = new Date(`${expenseDate}T${expenseTime}`).getTime();
     const occurredAt = params.occurredAt || (!isNaN(parsedOccurred) ? parsedOccurred : now);
-
-    const initialAuditLog = {
-      id: 'log_' + now,
-      type: 'created' as const,
-      byUid: user.uid,
-      byName: authorFirstName,
-      timestamp: now,
-      formattedTimestamp,
-      summary: `Created expense ${name} for ${(costMinor / 100).toFixed(2)}`,
-    };
 
     const newExpense: Omit<ExpenseEntry, 'id'> = {
       eventId,
@@ -1044,11 +929,7 @@ export const dataService = {
       createdBy: user.uid,
       createdByName: authorFirstName,
       createdAt: now,
-      lastModifiedBy: user.uid,
-      lastModifiedByName: authorFirstName,
-      lastModifiedAt: now,
       deleted: false,
-      auditLogs: [initialAuditLog],
     };
 
     let expenseId: string;
@@ -1102,11 +983,15 @@ export const dataService = {
     user: UserProfile,
     eventMembers: Record<string, any>
   ): Promise<void> {
-    const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
     const authorFirstName = getFirstName(user.displayName);
 
     const applyUpdatesToEntry = (current: ExpenseEntry): ExpenseEntry => {
+      // Ownership check: only creator can edit
+      const isOwner = isEntryCreatorOrOwner(current, user.uid);
+      if (!isOwner) {
+        throw new Error('Only the creator can edit this subitem.');
+      }
+
       const name = updates.name !== undefined ? updates.name : current.name;
       const costMinor = updates.costMinor !== undefined ? updates.costMinor : current.costMinor;
       const paidBy = updates.paidBy !== undefined ? updates.paidBy : current.paidBy;
@@ -1128,54 +1013,6 @@ export const dataService = {
         ? calculateEqualShares(costMinor, participants)
         : (updates.customShares || current.shares);
 
-      const changedFields: string[] = [];
-      const previousValues: Record<string, any> = {};
-      const newValues: Record<string, any> = {};
-
-      if (updates.name && updates.name !== current.name) {
-        changedFields.push('name');
-        previousValues.name = current.name;
-        newValues.name = updates.name;
-      }
-      if (updates.costMinor !== undefined && updates.costMinor !== current.costMinor) {
-        changedFields.push('cost');
-        previousValues.costMinor = current.costMinor;
-        newValues.costMinor = updates.costMinor;
-      }
-      if (updates.paidBy && updates.paidBy !== current.paidBy) {
-        changedFields.push('payer');
-        previousValues.paidBy = current.paidBy;
-        newValues.paidBy = updates.paidBy;
-      }
-      if (updates.splitBy && updates.splitBy !== current.splitBy) {
-        changedFields.push('split mode');
-        previousValues.splitBy = current.splitBy;
-        newValues.splitBy = updates.splitBy;
-      }
-      if (updates.participants) {
-        changedFields.push('participants');
-        previousValues.participants = current.participants;
-        newValues.participants = updates.participants;
-      }
-      if (updates.expenseDate && updates.expenseDate !== current.expenseDate) {
-        changedFields.push('date');
-        previousValues.expenseDate = current.expenseDate;
-        newValues.expenseDate = updates.expenseDate;
-      }
-
-      const auditLog = {
-        id: 'log_' + now,
-        type: 'edited' as const,
-        byUid: user.uid,
-        byName: authorFirstName,
-        timestamp: now,
-        formattedTimestamp,
-        changedFields,
-        previousValues,
-        newValues,
-        summary: `Edited by ${authorFirstName} at ${formattedTimestamp}`,
-      };
-
       return {
         ...current,
         name,
@@ -1189,10 +1026,6 @@ export const dataService = {
         expenseTime,
         occurredAt,
         comment,
-        lastModifiedBy: user.uid,
-        lastModifiedByName: authorFirstName,
-        lastModifiedAt: now,
-        auditLogs: [...(current.auditLogs || []), auditLog],
       };
     };
 
@@ -1234,44 +1067,38 @@ export const dataService = {
     eventId: string,
     expenseId: string,
     user: UserProfile,
-    eventMembers: Record<string, any>
+    eventMembers: Record<string, any>,
+    isAllSettled: boolean = false
   ): Promise<void> {
     const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
-
-    const auditLog = {
-      id: 'log_' + now,
-      type: 'deleted' as const,
-      byUid: user.uid,
-      byName: user.displayName,
-      timestamp: now,
-      formattedTimestamp,
-      summary: `Deleted by ${user.displayName} at ${formattedTimestamp}`,
-    };
 
     if (!isFirebaseConfigured() || !db) {
       const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
       const idx = expenses.findIndex((e) => e.id === expenseId);
       if (idx !== -1) {
+        const current = expenses[idx];
+        const isOwner = isEntryCreatorOrOwner(current, user.uid);
+        if (!isOwner && !isAllSettled) {
+          throw new Error('Only the creator can delete this subitem until all event dues are settled.');
+        }
         expenses[idx].deleted = true;
         expenses[idx].deletedAt = now;
         expenses[idx].deletedBy = user.uid;
-        expenses[idx].auditLogs.push(auditLog);
         setLocal(`expenses_${eventId}`, expenses);
       }
     } else {
       const ref = doc(db, 'events', eventId, 'expenses', expenseId);
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const existingLogs = (snap.data().auditLogs || []);
+        const current = snap.data() as ExpenseEntry;
+        const isOwner = isEntryCreatorOrOwner(current, user.uid);
+        if (!isOwner && !isAllSettled) {
+          throw new Error('Only the creator can delete this subitem until all event dues are settled.');
+        }
         await updateDoc(ref, {
           deleted: true,
           deletedAt: now,
           deletedBy: user.uid,
-          lastModifiedBy: user.uid,
-          lastModifiedByName: user.displayName,
-          lastModifiedAt: now,
-          auditLogs: [...existingLogs, auditLog],
         });
       }
     }
@@ -1297,31 +1124,44 @@ export const dataService = {
     eventId: string,
     expenseIds: string[],
     user: UserProfile,
-    eventMembers: Record<string, any>
+    eventMembers: Record<string, any>,
+    isAllSettled: boolean = false
   ): Promise<void> {
     const now = Date.now();
-    const formattedTimestamp = formatAuditTimestamp(now);
 
     if (!isFirebaseConfigured() || !db) {
       const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
+      if (!isAllSettled) {
+        for (const exp of expenses) {
+          if (expenseIds.includes(exp.id)) {
+            const isOwner = isEntryCreatorOrOwner(exp, user.uid);
+            if (!isOwner) {
+              throw new Error('You can only delete your own expenses until all event dues are settled.');
+            }
+          }
+        }
+      }
       for (const exp of expenses) {
         if (expenseIds.includes(exp.id)) {
           exp.deleted = true;
           exp.deletedAt = now;
           exp.deletedBy = user.uid;
-          exp.auditLogs.push({
-            id: 'log_' + now,
-            type: 'deleted',
-            byUid: user.uid,
-            byName: user.displayName,
-            timestamp: now,
-            formattedTimestamp,
-            summary: `Bulk deleted`,
-          });
         }
       }
       setLocal(`expenses_${eventId}`, expenses);
     } else {
+      if (!isAllSettled) {
+        for (const id of expenseIds) {
+          const snap = await getDoc(doc(db, 'events', eventId, 'expenses', id));
+          if (snap.exists()) {
+            const exp = snap.data() as ExpenseEntry;
+            const isOwner = isEntryCreatorOrOwner(exp, user.uid);
+            if (!isOwner) {
+              throw new Error('You can only delete your own expenses until all event dues are settled.');
+            }
+          }
+        }
+      }
       const batch = writeBatch(db);
       for (const id of expenseIds) {
         const ref = doc(db, 'events', eventId, 'expenses', id);
@@ -1329,9 +1169,6 @@ export const dataService = {
           deleted: true,
           deletedAt: now,
           deletedBy: user.uid,
-          lastModifiedBy: user.uid,
-          lastModifiedByName: user.displayName,
-          lastModifiedAt: now,
         });
       }
       await batch.commit();
@@ -1350,6 +1187,121 @@ export const dataService = {
           description: `${user.displayName} deleted ${expenseIds.length} expense(s)`,
         });
       }
+    }
+  },
+
+  async deleteSettlement(
+    eventId: string,
+    settlementId: string,
+    user: UserProfile,
+    isAllSettled: boolean = false
+  ): Promise<void> {
+    if (!isFirebaseConfigured() || !db) {
+      const settlements = getLocal<SettlementEntry[]>(`settlements_${eventId}`, []);
+      const idx = settlements.findIndex((s) => s.id === settlementId);
+      if (idx === -1) throw new Error('Settlement not found');
+      const s = settlements[idx];
+      const isOwner = user.uid === s.recordedBy || user.uid === s.payerUid || user.uid === s.receiverUid;
+      if (!isOwner && !isAllSettled) {
+        throw new Error('Only the parties involved can delete this settlement until all event dues are settled.');
+      }
+      settlements.splice(idx, 1);
+      setLocal(`settlements_${eventId}`, settlements);
+      return;
+    }
+
+    const ref = doc(db, 'events', eventId, 'settlements', settlementId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Settlement not found');
+    const s = snap.data() as SettlementEntry;
+    const isOwner = user.uid === s.recordedBy || user.uid === s.payerUid || user.uid === s.receiverUid;
+    if (!isOwner && !isAllSettled) {
+      throw new Error('Only the parties involved can delete this settlement until all event dues are settled.');
+    }
+    await deleteDoc(ref);
+  },
+
+  async addDiscrepancyNote(
+    eventId: string,
+    targetType: 'item' | 'expense' | 'settlement',
+    targetId: string,
+    text: string,
+    user: UserProfile
+  ): Promise<DiscrepancyNote> {
+    const now = Date.now();
+    const newNote: DiscrepancyNote = {
+      id: 'note_' + now + '_' + Math.random().toString(36).substring(2, 7),
+      authorUid: user.uid,
+      authorName: getFirstName(user.displayName),
+      authorPhotoURL: user.photoURL,
+      text: text.trim(),
+      createdAt: now,
+    };
+
+    if (!isFirebaseConfigured() || !db) {
+      const collectionKey =
+        targetType === 'item'
+          ? `items_${eventId}`
+          : targetType === 'expense'
+          ? `expenses_${eventId}`
+          : `settlements_${eventId}`;
+      const list = getLocal<any[]>(collectionKey, []);
+      const idx = list.findIndex((e) => e.id === targetId);
+      if (idx !== -1) {
+        list[idx].discrepancyNotes = [...(list[idx].discrepancyNotes || []), newNote];
+        setLocal(collectionKey, list);
+      }
+      return newNote;
+    }
+
+    const collectionName =
+      targetType === 'item' ? 'items' : targetType === 'expense' ? 'expenses' : 'settlements';
+    const ref = doc(db, 'events', eventId, collectionName, targetId);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const existingNotes = (snap.data().discrepancyNotes || []) as DiscrepancyNote[];
+      await updateDoc(ref, {
+        discrepancyNotes: [...existingNotes, newNote],
+      });
+    }
+    return newNote;
+  },
+
+  async deleteDiscrepancyNote(
+    eventId: string,
+    targetType: 'item' | 'expense' | 'settlement',
+    targetId: string,
+    noteId: string,
+    userUid: string
+  ): Promise<void> {
+    if (!isFirebaseConfigured() || !db) {
+      const collectionKey =
+        targetType === 'item'
+          ? `items_${eventId}`
+          : targetType === 'expense'
+          ? `expenses_${eventId}`
+          : `settlements_${eventId}`;
+      const list = getLocal<any[]>(collectionKey, []);
+      const idx = list.findIndex((e) => e.id === targetId);
+      if (idx !== -1) {
+        list[idx].discrepancyNotes = (list[idx].discrepancyNotes || []).filter(
+          (n: DiscrepancyNote) => !(n.id === noteId && n.authorUid === userUid)
+        );
+        setLocal(collectionKey, list);
+      }
+      return;
+    }
+
+    const collectionName =
+      targetType === 'item' ? 'items' : targetType === 'expense' ? 'expenses' : 'settlements';
+    const ref = doc(db, 'events', eventId, collectionName, targetId);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const existingNotes = (snap.data().discrepancyNotes || []) as DiscrepancyNote[];
+      const filtered = existingNotes.filter((n) => !(n.id === noteId && n.authorUid === userUid));
+      await updateDoc(ref, {
+        discrepancyNotes: filtered,
+      });
     }
   },
 
@@ -2880,7 +2832,7 @@ export const dataService = {
             lastModifiedBy: user.uid,
             lastModifiedByName: userFirstName,
             lastModifiedAt: now,
-            updatedAt: now,
+            updatedAt: Date.now(),
           }));
         }
       }

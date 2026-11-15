@@ -128,7 +128,7 @@ export const LoginPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0" />
-            <span>Hierarchical items, subitems, and audit history</span>
+            <span>Hierarchical items, subitems, and discrepancy notes</span>
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0" />

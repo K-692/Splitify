@@ -1,6 +1,5 @@
 import { SplitifyEvent, EventItem, ExpenseEntry } from '@/types';
 import { calculateEqualShares } from '@/domain/calculations/finance';
-import { formatAuditTimestamp } from '@/utils/date';
 
 export function initializeDemoDataIfEmpty(): void {
   const existingEvents = localStorage.getItem('splitify_store_events');
@@ -111,21 +110,7 @@ export function initializeDemoDataIfEmpty(): void {
       createdBy: krish.uid,
       createdByName: krish.displayName,
       createdAt: earlier + 1000,
-      lastModifiedBy: krish.uid,
-      lastModifiedByName: krish.displayName,
-      lastModifiedAt: earlier + 1000,
       deleted: false,
-      auditLogs: [
-        {
-          id: 'log_flight_1',
-          type: 'created',
-          byUid: krish.uid,
-          byName: krish.displayName,
-          timestamp: earlier + 1000,
-          formattedTimestamp: formatAuditTimestamp(earlier + 1000),
-          summary: 'Created by Krishnendu',
-        },
-      ],
     },
     {
       id: 'exp_taxi',
@@ -141,20 +126,7 @@ export function initializeDemoDataIfEmpty(): void {
       createdBy: rahul.uid,
       createdByName: rahul.displayName,
       createdAt: earlier + 2000,
-      lastModifiedBy: rahul.uid,
-      lastModifiedByName: rahul.displayName,
-      lastModifiedAt: earlier + 2000,
       deleted: false,
-      auditLogs: [
-        {
-          id: 'log_taxi_1',
-          type: 'created',
-          byUid: rahul.uid,
-          byName: rahul.displayName,
-          timestamp: earlier + 2000,
-          formattedTimestamp: formatAuditTimestamp(earlier + 2000),
-        },
-      ],
     },
     {
       id: 'exp_hotel',
@@ -171,20 +143,7 @@ export function initializeDemoDataIfEmpty(): void {
       createdBy: krish.uid,
       createdByName: krish.displayName,
       createdAt: earlier + 3000,
-      lastModifiedBy: krish.uid,
-      lastModifiedByName: krish.displayName,
-      lastModifiedAt: earlier + 3000,
       deleted: false,
-      auditLogs: [
-        {
-          id: 'log_hotel_1',
-          type: 'created',
-          byUid: krish.uid,
-          byName: krish.displayName,
-          timestamp: earlier + 3000,
-          formattedTimestamp: formatAuditTimestamp(earlier + 3000),
-        },
-      ],
     },
     {
       id: 'exp_dinner',
@@ -201,20 +160,7 @@ export function initializeDemoDataIfEmpty(): void {
       createdBy: priya.uid,
       createdByName: priya.displayName,
       createdAt: earlier + 4000,
-      lastModifiedBy: priya.uid,
-      lastModifiedByName: priya.displayName,
-      lastModifiedAt: earlier + 4000,
       deleted: false,
-      auditLogs: [
-        {
-          id: 'log_dinner_1',
-          type: 'created',
-          byUid: priya.uid,
-          byName: priya.displayName,
-          timestamp: earlier + 4000,
-          formattedTimestamp: formatAuditTimestamp(earlier + 4000),
-        },
-      ],
     },
   ];
 

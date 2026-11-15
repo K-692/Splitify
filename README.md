@@ -47,13 +47,11 @@ With Splitify, manual calculations are completely eliminated. The application au
 Splitify adopts an **Item-First architecture** designed for speed and flexibility:
 - **Instant Direct Expenses:** When recording an expense (e.g. Airport Cab ₹1,200), it is created directly as a standalone item with its own cost, payer, split mode, and participants.
 - **One-Click Category Conversion:** Any standalone item can be converted into a category whenever additional subitems need to be logged (e.g., converting "Food" into a category with "Breakfast" and "Dinner" subitems).
-- **Zero Data Loss:** When converting, existing expense details and audit history are automatically preserved as the first subitem.
+- **Zero Data Loss:** When converting, existing expense details are automatically preserved as the first subitem.
 - **No Double-Counting:** Category items dynamically calculate their total from their active subitems, while standalone items report their direct cost.
-- **Audit History:** Immutable modification logs on all expenses:
-  ```text
-  Created by Krishnendu at 09:30 PM 15:11:2026
-  Edited by Rahul at 10:15 PM 15:11:2026
-  ```
+- **Entry Creator Ownership:** Whoever creates an entry (standalone expense, category, or subitem) owns that entry and is the only person who can edit or delete it before dues are settled.
+- **All-Settled Deletion Rule:** When all dues are settled among all people for an event, any member from that event can delete all entries.
+- **Discrepancy Notes:** Any event member can view and leave discrepancy notes on any expense item, category, subitem, or settlement entry if they notice any discrepancy.
 
 ### 3. 🔗 Event Invitation Links (No Join Codes)
 - **Unique Shareable URLs:** Every event generates clean invitation URLs (e.g. `https://k-692.github.io/Splitify/join/<token>`). No hashes (`#`) in URLs thanks to modern GitHub Pages SPA routing with `404.html`. Join Codes are completely removed.
@@ -72,8 +70,8 @@ Splitify adopts an **Item-First architecture** designed for speed and flexibilit
 - **"Do you have subitems? ☑" Checkbox:**
   - **Unchecked (Standalone Expense):** Quick entry with description, amount, calendar date picker (`YYYY-MM-DD`), payer, split mode, and participants.
   - **Checked (Category with Subitems):** Step 1 prompts for Category Name -> Step 2 allows staging multiple subitems with dynamic total computation.
-- **Collaborative Editing:** All event members can add, edit, or delete expenses, items, subitems, and settlements.
-- **Audit Logging:** Every modification records timestamps, actor, and captures `previousValues` and `newValues`.
+- **Creator Ownership & Dues-Settled Deletion:** Entry creators retain exclusive modification rights until all event dues are settled, after which any member can clean up entries.
+- **Discrepancy Notes:** All members can attach and review discrepancy notes on any item, subitem, or settlement.
 - **First Name Display:** User names are cleanly rendered using their first names throughout the entire app (e.g. "Krishnendu", "Rahul", "Priya").
 
 ### 6. 📋 Copy Expenses — Plain-Text Export
