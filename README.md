@@ -38,49 +38,57 @@ With Splitify, manual calculations are completely eliminated. The application au
 - Unique Splitify username handles (e.g. `@krish`, `@rahul`, `@priya`) for private friend discovery.
 - Profile customization, avatars, and persistent authentication sessions.
 
-### 2. 🗂️ Hierarchical Expense Structure
-Splitify structures expenses in a clean, intuitive parent-child hierarchy:
-```text
-Event (e.g., Goa Trip)
-│
-├── Transportation             ₹12,000
-│   ├── Flight Tickets          ₹8,000
-│   ├── Airport Taxi            ₹2,000
-│   └── Local Transport         ₹2,000
-│
-├── Accommodation              ₹9,000
-│   ├── Hotel Booking           ₹6,000
-│   └── Resort Booking          ₹3,000
-│
-└── Food                        ₹4,500
-    ├── Breakfast               ₹1,000
-    └── Dinner                  ₹3,500
-```
-- **Automatic Item Totals:** Parent categories automatically sum all active subitems.
-- **Collaborative Editing:** All event members can add, rename, and edit items and expenses.
-- **Audit Logs:** Immutable modification history displayed under each subitem:
+### 2. 🧾 Item-First Expense Architecture & Categories
+Splitify adopts an **Item-First architecture** designed for speed and flexibility:
+- **Instant Direct Expenses:** When recording an expense (e.g. Airport Cab ₹1,200), it is created directly as a standalone item with its own cost, payer, split mode, and participants.
+- **One-Click Category Conversion:** Any standalone item can be converted into a category whenever additional subitems need to be logged (e.g., converting "Food" into a category with "Breakfast" and "Dinner" subitems).
+- **Zero Data Loss:** When converting, existing expense details and audit history are automatically preserved as the first subitem.
+- **No Double-Counting:** Category items dynamically calculate their total from their active subitems, while standalone items report their direct cost.
+- **Audit History:** Immutable modification logs on all expenses:
   ```text
   Created by Krishnendu at 09:30 PM 15:11:2026
   Edited by Rahul at 10:15 PM 15:11:2026
   ```
 
-### 3. ⚖️ Flexible & Exact Splitting
-- **Equal Split (Default):** Divides cost equally among selected participants with deterministic integer minor-unit rounding (zero remainder loss).
+### 3. 🔗 Event Invitation Links (No Join Codes)
+- **Unique Shareable URLs:** Every event generates unique invitation links (e.g. `https://k-692.github.io/Splitify/#/join/<token>`). Join Codes are completely removed.
+- **Direct Social Sharing:** One-click sharing via WhatsApp, Telegram, Email, Device Share (Web Share API), and Copy Link.
+- **Flexible Scopes:**
+  - **Full Event Access:** Invitees can view and participate in all event expenses.
+  - **Selected Items Only:** Restrict invitees to specific items (e.g., someone only joining for the cab or hotel).
+- **Smooth Invitation Onboarding:** Unauthenticated visitors are guided to Google sign-in and returned directly to the invitation to select a slot and join.
+
+### 4. 🚗 Event Slots & Group-Based Splitting
+- **Named Groups Within Events:** Organize members into travel cars, hotel rooms, or sub-teams (e.g., "Car 1", "Innova", "Room 102", "Self Arrangement").
+- **Configurable Capacity:** Set max capacities per slot. Members can join or leave slots.
+- **Slot-Based One-Click Splitting:** When creating or editing an expense, selecting a slot automatically selects all members assigned to that slot!
+
+### 5. 📋 Copy Expenses — Plain-Text Export
+- Prominent **"Copy Expenses"** button on event details.
+- Formats complete event summary with the **Event Invitation Link placed FIRST at the very top**, followed by dates, timestamps, categorized and standalone items, subitems, payers, splits, settlements, and total expense.
+- Integrated with Clipboard API and mobile Web Share API.
+
+### 6. 🚪 Event Deletion & Leaving
+- **Event Deletion (Host Only):** Confirmation modal with soft-deletion and immediate archive removal.
+- **Leaving an Event (Members):** Members can leave an event. If an unsettled balance exists, a clear warning is displayed to settle debts before proceeding. Past ledger records remain intact.
+
+### 7. ⚖️ Flexible & Exact Splitting
+- **Equal Split (Default):** Divides cost equally among selected participants or slots with deterministic integer minor-unit rounding (zero remainder loss).
 - **Exact Amount Split:** Custom amounts per participant with real-time balance validation.
 
-### 4. 📊 Financial Dashboard & Debt Simplification
+### 8. 📊 Financial Dashboard & Debt Simplification
 - **Event Summary:** Total Expense, Your Share, and Net Position ("You're Owed" / "You Owe").
 - **Individual Spending Ledger:** Member-by-member breakdown of amount spent, fair share, and net balance.
 - **Who Pays Whom:** Greedy debt-simplification algorithm generates the minimal number of direct settlement transactions.
 - **💸 Settled! Flow:** One-click settlement dialog (full or partial amounts) recording transactions under a system-generated `💸 Settlements` item without distorting Total Expense.
 - **🔔 In-App Payment Reminders:** Creditors can send instantaneous reminder notifications to debtors.
 
-### 5. 🤝 Friends & Event Invitations
+### 9. 🤝 Friends & User Discovery
 - Search users by username handle (`@username`).
 - Send, accept, decline, and cancel friend requests.
-- Invite existing friends to events or share a 6-character Join Code.
+- Direct in-app event invitations to friends.
 
-### 6. 🎨 Brand Identity & Polished UI/UX
+### 10. 🎨 Brand Identity, Mobile Responsiveness & Polished UI/UX
 - Official palette derived from the Splitify logo:
   - Deep Navy: `#203D62`
   - Teal Green: `#16AA88`
@@ -88,8 +96,9 @@ Event (e.g., Goa Trip)
   - Warm Yellow: `#F5A623`
   - Light Sky Blue: `#60BCE8`
 - **Nunito** friendly, rounded typography.
-- Fully designed **Light Theme** and **Dark Navy Theme** with persistent state.
-- Responsive mobile layout with dedicated bottom navigation bar.
+- **Full Mobile Browser Compatibility:** Optimized for iPhone (Safari), Android (Chrome), iPad, tablets, and desktop viewports with responsive modals, safe-area padding, and touch-friendly controls.
+- **Streamlined Navigation:** Header and bottom navigation focused cleanly on **Home** and **Friends**.
+- **Simplified Home Screen:** Focused purely on **My Events** with total expenses, net balance badges, and quick share actions.
 - Automatic keyword-based **Emoji Detection** (with fallback 📌).
 
 ---

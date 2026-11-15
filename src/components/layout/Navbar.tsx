@@ -12,7 +12,6 @@ import {
   User,
   PlusCircle,
   Home,
-  Calendar,
   Users,
 } from 'lucide-react';
 
@@ -38,7 +37,6 @@ export const Navbar: React.FC = () => {
 
   const navLinks = [
     { label: 'Home', path: '/', icon: Home },
-    { label: 'Events', path: '/events', icon: Calendar },
     { label: 'Friends', path: '/friends', icon: Users },
   ];
 
@@ -91,7 +89,7 @@ export const Navbar: React.FC = () => {
           {/* Quick Create Event Button */}
           {user && (
             <button
-              onClick={() => navigate('/events?action=create')}
+              onClick={() => navigate('/?action=create')}
               className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs shadow-sm transition-transform active:scale-95"
             >
               <PlusCircle className="w-3.5 h-3.5" />

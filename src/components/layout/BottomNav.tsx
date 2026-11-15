@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Calendar, Users, Bell, User } from 'lucide-react';
+import { Home, Users, Bell, User } from 'lucide-react';
 import { useNotifications } from '@/app/providers/NotificationContext';
 
 export const BottomNav: React.FC = () => {
@@ -9,7 +9,6 @@ export const BottomNav: React.FC = () => {
 
   const links = [
     { label: 'Home', path: '/', icon: Home },
-    { label: 'Events', path: '/events', icon: Calendar },
     { label: 'Friends', path: '/friends', icon: Users },
     { label: 'Inbox', path: '/notifications', icon: Bell, badge: unreadCount },
     { label: 'Profile', path: '/profile', icon: User },
@@ -17,7 +16,7 @@ export const BottomNav: React.FC = () => {
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0D1B2A]/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe transition-colors">
-      <div className="grid grid-cols-5 h-16 max-w-lg mx-auto px-2">
+      <div className="grid grid-cols-4 h-16 max-w-lg mx-auto px-2">
         {links.map((link) => {
           const Icon = link.icon;
           const isActive =

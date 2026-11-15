@@ -62,6 +62,25 @@ rules_version = '2';
 //   - toDisplayName: string (optional, <= 100 chars) - Invitee display name
 //   - status: string (required, 'pending' | 'accepted' | 'declined')
 //   - createdAt: number (required, immutable) - Timestamp
+//   - scope: string (optional, 'full' | 'selected_items') - Access scope
+//   - allowedItemIds: list (optional, <= 200 items) - Authorized item IDs
+//
+// Collection: eventInvitationLinks
+// Document ID: {linkId}
+// Fields:
+//   - token: string (required, 1-128 chars, immutable) - Unique URL invite token
+//   - eventId: string (required, 1-128 chars, immutable) - Target event ID
+//   - eventName: string (required, 1-100 chars) - Event title
+//   - eventEmoji: string (optional, <= 20 chars) - Event emoji
+//   - createdByUid: string (required, 1-128 chars, immutable) - Creator user UID
+//   - createdByName: string (required, 1-100 chars) - Creator display name
+//   - createdAt: number (required, immutable) - Creation timestamp
+//   - scope: string (required, 'full' | 'selected_items') - Permission scope
+//   - allowedItemIds: list of strings (optional, <= 200 items) - Scoped items
+//   - revoked: bool (optional) - Revocation flag
+//   - usesCount: number (required, >= 0) - Counter of joins through link
+//   - maxUses: number (optional, >= 1) - Max allowed uses
+//   - expiresAt: number (optional) - Expiration timestamp
 //
 // Collection: events
 // Document ID: {eventId}
@@ -77,20 +96,50 @@ rules_version = '2';
 //       * username: string (optional)
 //       * joinedAt: number
 //       * role: string ('host' | 'member')
+//       * slotId: string (optional)
+//       * scope: string (optional, 'full' | 'selected_items')
+//       * allowedItemIds: list of strings (optional)
+//   - slots: map (optional, <= 50 slots) - Map of slotId to EventSlot:
+//       * id: string
+//       * eventId: string
+//       * name: string
+//       * description: string (optional)
+//       * maxCapacity: number
+//       * assignedMemberUids: list of strings
+//       * createdAt: number
+//       * updatedAt: number
 //   - joinCode: string (optional, <= 20 chars) - Public 6-char share code
 //   - createdAt: number (required, immutable) - Timestamp
 //   - updatedAt: number (required) - Timestamp
+//   - deleted: bool (optional) - Soft-deletion flag by host
+//   - deletedAt: number (optional) - Soft-deletion timestamp
+//   - deletedBy: string (optional, <= 128 chars) - UID who soft-deleted
 //
 // Subcollection: events/{eventId}/items
 // Document ID: {itemId}
 // Fields:
 //   - eventId: string (required, immutable) - Parent event ID
-//   - name: string (required, 1-100 chars) - Bucket name (e.g. 'Food', '💸 Settlements')
-//   - emoji: string (required, <= 20 chars) - Category emoji
-//   - isSettlementsItem: bool (optional) - System settlements flag
+//   - name: string (required, 1-100 chars) - Item or category name
+//   - emoji: string (required, <= 20 chars) - Category/item emoji
+//   - isCategory: bool (optional) - True if acts as category with subexpenses
+//   - isSettlementsItem: bool (optional) - System settlements item flag
 //   - createdAt: number (required, immutable) - Timestamp
 //   - updatedAt: number (required) - Timestamp
 //   - deleted: bool (optional) - Soft deletion flag
+//   - deletedAt: number (optional) - Soft deletion timestamp
+//   - deletedBy: string (optional, <= 128 chars) - Soft deletion UID
+//   - costMinor: number (optional, >= 0) - Cost in minor currency units
+//   - paidBy: string (optional, <= 128 chars) - Payer UID
+//   - splitBy: string (optional, 'equal' | 'amount') - Split mode
+//   - participants: list of strings (optional, <= 100 items) - Participant UIDs
+//   - shares: map (optional, <= 100 entries) - UID -> minor unit allocation
+//   - comment: string (optional, <= 500 chars) - Item notes
+//   - createdBy: string (optional, <= 128 chars) - Creator UID
+//   - createdByName: string (optional, <= 100 chars) - Creator name
+//   - lastModifiedBy: string (optional, <= 128 chars) - Last modifier UID
+//   - lastModifiedByName: string (optional, <= 100 chars) - Last modifier name
+//   - lastModifiedAt: number (optional) - Last modification timestamp
+//   - auditLogs: list of maps (optional, <= 200 logs) - Item audit log trail
 //
 // Subcollection: events/{eventId}/expenses
 // Document ID: {expenseId}
@@ -192,7 +241,8 @@ service cloud.firestore {
       return isAuthenticated() && (
         (resource != null && 'members' in resource.data && request.auth.uid in resource.data.members) ||
         (exists(/databases/$(database)/documents/events/$(eventId)) &&
-         request.auth.uid in get(/databases/$(database)/documents/events/$(eventId)).data.members)
+         (request.auth.uid in get(/databases/$(database)/documents/events/$(eventId)).data.members ||
+          request.auth.uid == get(/databases/$(database)/documents/events/$(eventId)).data.hostUid))
       );
     }
 
@@ -257,7 +307,7 @@ service cloud.firestore {
 
     function isValidEventInvitation(data) {
       return data.keys().hasAll(['eventId', 'eventName', 'fromUid', 'fromDisplayName', 'toUid', 'status', 'createdAt']) &&
-             data.keys().hasOnly(['eventId', 'eventName', 'eventEmoji', 'fromUid', 'fromDisplayName', 'toUid', 'toDisplayName', 'status', 'createdAt']) &&
+             data.keys().hasOnly(['eventId', 'eventName', 'eventEmoji', 'fromUid', 'fromDisplayName', 'toUid', 'toDisplayName', 'status', 'createdAt', 'scope', 'allowedItemIds']) &&
              data.eventId is string && data.eventId.size() >= 1 && data.eventId.size() <= 128 &&
              data.eventName is string && data.eventName.size() >= 1 && data.eventName.size() <= 100 &&
              data.fromUid is string && data.fromUid.size() >= 1 && data.fromUid.size() <= 128 &&
@@ -266,12 +316,32 @@ service cloud.firestore {
              data.status in ['pending', 'accepted', 'declined'] &&
              data.createdAt is number &&
              (!('eventEmoji' in data) || (data.eventEmoji is string && data.eventEmoji.size() <= 20)) &&
-             (!('toDisplayName' in data) || (data.toDisplayName is string && data.toDisplayName.size() <= 100));
+             (!('toDisplayName' in data) || (data.toDisplayName is string && data.toDisplayName.size() <= 100)) &&
+             (!('scope' in data) || data.scope in ['full', 'selected_items']) &&
+             (!('allowedItemIds' in data) || (data.allowedItemIds is list && data.allowedItemIds.size() <= 200));
+    }
+
+    function isValidInvitationLink(data) {
+      return data.keys().hasAll(['token', 'eventId', 'eventName', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'usesCount']) &&
+             data.keys().hasOnly(['token', 'eventId', 'eventName', 'eventEmoji', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'allowedItemIds', 'revoked', 'usesCount', 'maxUses', 'expiresAt']) &&
+             data.token is string && data.token.size() >= 1 && data.token.size() <= 128 &&
+             data.eventId is string && data.eventId.size() >= 1 && data.eventId.size() <= 128 &&
+             data.eventName is string && data.eventName.size() >= 1 && data.eventName.size() <= 100 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             data.createdAt is number &&
+             data.scope in ['full', 'selected_items'] &&
+             data.usesCount is number && data.usesCount >= 0 &&
+             (!('eventEmoji' in data) || (data.eventEmoji is string && data.eventEmoji.size() <= 20)) &&
+             (!('allowedItemIds' in data) || (data.allowedItemIds is list && data.allowedItemIds.size() <= 200)) &&
+             (!('revoked' in data) || data.revoked is bool) &&
+             (!('maxUses' in data) || (data.maxUses is number && data.maxUses >= 1)) &&
+             (!('expiresAt' in data) || data.expiresAt is number);
     }
 
     function isValidEvent(data) {
       return data.keys().hasAll(['name', 'emoji', 'currency', 'hostUid', 'members', 'createdAt', 'updatedAt']) &&
-             data.keys().hasOnly(['name', 'emoji', 'currency', 'hostUid', 'members', 'joinCode', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'emoji', 'currency', 'hostUid', 'members', 'slots', 'joinCode', 'createdAt', 'updatedAt', 'deleted', 'deletedAt', 'deletedBy']) &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
              data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 20 &&
              data.currency is string && data.currency.size() >= 1 && data.currency.size() <= 10 &&
@@ -279,19 +349,44 @@ service cloud.firestore {
              data.members is map && data.members.size() >= 1 && data.members.size() <= 100 &&
              data.createdAt is number &&
              data.updatedAt is number &&
-             (!('joinCode' in data) || (data.joinCode is string && data.joinCode.size() <= 20));
+             (!('slots' in data) || (data.slots is map && data.slots.size() <= 50)) &&
+             (!('joinCode' in data) || (data.joinCode is string && data.joinCode.size() <= 20)) &&
+             (!('deleted' in data) || data.deleted is bool) &&
+             (!('deletedAt' in data) || data.deletedAt is number) &&
+             (!('deletedBy' in data) || (data.deletedBy is string && data.deletedBy.size() <= 128));
     }
 
     function isValidEventItem(data, eventId) {
       return data.keys().hasAll(['eventId', 'name', 'emoji', 'createdAt', 'updatedAt']) &&
-             data.keys().hasOnly(['eventId', 'name', 'emoji', 'isSettlementsItem', 'createdAt', 'updatedAt', 'deleted']) &&
+             data.keys().hasOnly([
+               'eventId', 'name', 'emoji', 'createdAt', 'updatedAt',
+               'isCategory', 'isSettlementsItem', 'deleted', 'deletedAt', 'deletedBy',
+               'costMinor', 'paidBy', 'splitBy', 'participants', 'shares', 'comment',
+               'createdBy', 'createdByName', 'lastModifiedBy', 'lastModifiedByName',
+               'lastModifiedAt', 'auditLogs'
+             ]) &&
              data.eventId == eventId &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
              data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 20 &&
              data.createdAt is number &&
              data.updatedAt is number &&
+             (!('isCategory' in data) || data.isCategory is bool) &&
              (!('isSettlementsItem' in data) || data.isSettlementsItem is bool) &&
-             (!('deleted' in data) || data.deleted is bool);
+             (!('deleted' in data) || data.deleted is bool) &&
+             (!('deletedAt' in data) || data.deletedAt is number) &&
+             (!('deletedBy' in data) || (data.deletedBy is string && data.deletedBy.size() <= 128)) &&
+             (!('costMinor' in data) || (data.costMinor is number && data.costMinor >= 0)) &&
+             (!('paidBy' in data) || (data.paidBy is string && data.paidBy.size() <= 128)) &&
+             (!('splitBy' in data) || data.splitBy in ['equal', 'amount']) &&
+             (!('participants' in data) || (data.participants is list && data.participants.size() <= 100)) &&
+             (!('shares' in data) || (data.shares is map && data.shares.size() <= 100)) &&
+             (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
+             (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 128)) &&
+             (!('createdByName' in data) || (data.createdByName is string && data.createdByName.size() <= 100)) &&
+             (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 128)) &&
+             (!('lastModifiedByName' in data) || (data.lastModifiedByName is string && data.lastModifiedByName.size() <= 100)) &&
+             (!('lastModifiedAt' in data) || data.lastModifiedAt is number) &&
+             (!('auditLogs' in data) || (data.auditLogs is list && data.auditLogs.size() <= 200));
     }
 
     function isValidExpense(data, eventId) {
@@ -389,7 +484,7 @@ service cloud.firestore {
              data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
              data.read is bool &&
              data.createdAt is number &&
-             (!('senderPhotoURL' in data) || (data.senderPhotoURL is string && data.senderPhotoURL.size() <= 2000 && (data.senderPhotoURL.size() == 0 || isValidUrl(data.senderPhotoURL)))) &&
+             (!('senderPhotoURL' in data) || (data.senderPhotoURL is string && data.senderPhotoURL.size() <= 2000 && (data.photoURL.size() == 0 || isValidUrl(data.senderPhotoURL)))) &&
              (!('eventId' in data) || (data.eventId is string && data.eventId.size() <= 128)) &&
              (!('eventName' in data) || (data.eventName is string && data.eventName.size() <= 100)) &&
              (!('amountMinor' in data) || data.amountMinor is number) &&
@@ -422,7 +517,7 @@ service cloud.firestore {
 
       allow delete: if isOwner(userId);
 
-      // 7. Notifications subcollection
+      // Notifications subcollection
       match /notifications/{notificationId} {
         // Only recipient can read, update (mark read), or delete notifications
         allow read: if isOwner(userId);
@@ -527,11 +622,63 @@ service cloud.firestore {
                        (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
     }
 
-    // 6. Events & Subcollections
+    // 6. Event Shareable Invitation Links
+    match /eventInvitationLinks/{linkId} {
+      // Authenticated users can read or query links by token
+      allow read: if isAuthenticated();
+
+      // Event members or host can generate invitation links for their event
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.createdByUid &&
+                       isEventMember(request.resource.data.eventId) &&
+                       isValidInvitationLink(request.resource.data);
+
+      // The creator or event host can update/revoke the link;
+      // Authenticated users joining through the link can atomically increment usesCount
+      allow update: if isAuthenticated() &&
+                       (
+                         // Creator or host can update/revoke link
+                         (
+                           (
+                             request.auth.uid == resource.data.createdByUid ||
+                             (
+                               exists(/databases/$(database)/documents/events/$(resource.data.eventId)) &&
+                               request.auth.uid == get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.hostUid
+                             )
+                           ) &&
+                           areImmutableFieldsUnchanged(['token', 'eventId', 'createdByUid', 'createdAt']) &&
+                           isValidInvitationLink(request.resource.data)
+                         ) ||
+                         // Joining user increments usesCount
+                         (
+                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usesCount']) &&
+                           request.resource.data.usesCount == resource.data.usesCount + 1 &&
+                           (!('revoked' in resource.data) || resource.data.revoked == false) &&
+                           (!('maxUses' in resource.data) || resource.data.usesCount < resource.data.maxUses) &&
+                           isValidInvitationLink(request.resource.data)
+                         )
+                       );
+
+      // Creator or event host can delete invitation link
+      allow delete: if isAuthenticated() &&
+                       (
+                         request.auth.uid == resource.data.createdByUid ||
+                         (
+                           exists(/databases/$(database)/documents/events/$(resource.data.eventId)) &&
+                           request.auth.uid == get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.hostUid
+                         )
+                       );
+    }
+
+    // 7. Events & Subcollections
     match /events/{eventId} {
-      // Read allowed if user is a member of the event, or if event has a join code
+      // Read allowed if user is a member/host of the event, or if event has a join code
       allow read: if isAuthenticated() &&
-                     (request.auth.uid in resource.data.members || resource.data.joinCode != null);
+                     (
+                       request.auth.uid in resource.data.members ||
+                       request.auth.uid == resource.data.hostUid ||
+                       resource.data.joinCode != null
+                     );
 
       // Host creates event and must include themselves in members map
       allow create: if isAuthenticated() &&
@@ -539,32 +686,47 @@ service cloud.firestore {
                        request.auth.uid in request.resource.data.members &&
                        isValidEvent(request.resource.data);
 
-      // Existing member can update event, OR joining user can append themselves to members map
+      // Updates allowed for:
+      // 1. Existing members updating details, slots, or members (including leaving the event)
+      // 2. Host updating or soft-deleting the event
+      // 3. Joining users adding themselves to the members map
       allow update: if isAuthenticated() &&
                        (
+                         // Existing member or host
                          request.auth.uid in resource.data.members ||
+                         request.auth.uid == resource.data.hostUid ||
+                         // New user joining via code or invitation link
                          (
-                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'slots', 'updatedAt']) &&
                            request.auth.uid in request.resource.data.members
                          )
+                       ) &&
+                       // Soft-deletion restricted to the host
+                       (
+                         !('deleted' in request.resource.data) ||
+                         request.resource.data.deleted == false ||
+                         request.auth.uid == resource.data.hostUid
                        ) &&
                        areImmutableFieldsUnchanged(['hostUid', 'createdAt']) &&
                        isValidEvent(request.resource.data);
 
-      // Host only can delete event
+      // Host only can hard delete event
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.hostUid;
 
-      // Subcollection: items (expense categories/buckets & settlements container)
+      // Subcollection: items (expense categories, standalone expense items, and settlements bucket)
       match /items/{itemId} {
         allow read: if isEventMember(eventId);
+
         allow create: if isEventMember(eventId) && isValidEventItem(request.resource.data, eventId);
+
         allow update: if isEventMember(eventId) &&
                          areImmutableFieldsUnchanged(['eventId', 'createdAt']) &&
                          isValidEventItem(request.resource.data, eventId);
+
         allow delete: if isEventMember(eventId);
       }
 
-      // Subcollection: expenses
+      // Subcollection: expenses (subexpenses within category items)
       match /expenses/{expenseId} {
         allow read: if isEventMember(eventId);
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { Button } from '@/components/common/Button';
 import { CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
@@ -7,11 +7,20 @@ import { CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 export const LoginPage: React.FC = () => {
   const { user, signInWithGoogle, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const getDestination = () => {
+    const fromState = (location.state as any)?.from;
+    const sessionTarget = sessionStorage.getItem('splitify_auth_redirect');
+    const target = fromState || sessionTarget || '/';
+    if (sessionTarget) sessionStorage.removeItem('splitify_auth_redirect');
+    return target;
+  };
 
   React.useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate(getDestination(), { replace: true });
     }
   }, [user, navigate]);
 
@@ -19,7 +28,7 @@ export const LoginPage: React.FC = () => {
     setAuthError(null);
     try {
       await signInWithGoogle();
-      navigate('/');
+      navigate(getDestination(), { replace: true });
     } catch (err: any) {
       console.error(err);
       setAuthError(err.message || 'Failed to authenticate with Google. Please try again.');

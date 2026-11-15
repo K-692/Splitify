@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
-import { SplitifyEvent, ExpenseEntry, SplitMode, UserProfile } from '@/types';
+import { SplitifyEvent, ExpenseEntry, EventItem, SplitMode, UserProfile } from '@/types';
 import { getEmojiForName } from '@/utils/emoji';
 import { toMinorUnits, formatCurrency } from '@/utils/currency';
 import { calculateEqualShares, validateAmountShares } from '@/domain/calculations/finance';
 import { Avatar } from '@/components/common/Avatar';
-import { Check, AlertCircle } from 'lucide-react';
+import { Check, AlertCircle, Layers } from 'lucide-react';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -15,6 +15,8 @@ interface ExpenseModalProps {
   itemId?: string;
   currentUser: UserProfile;
   initialExpense?: ExpenseEntry | null;
+  initialItem?: EventItem | null;
+  title?: string;
   onSave: (data: {
     name: string;
     costMinor: number;
@@ -33,6 +35,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   itemId: _itemId,
   currentUser,
   initialExpense,
+  initialItem,
+  title,
   onSave,
 }) => {
   const [name, setName] = useState('');
@@ -49,22 +53,24 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const memberList = Object.values(event.members);
 
   useEffect(() => {
-    if (initialExpense) {
-      setName(initialExpense.name);
-      setEmoji(initialExpense.emoji);
-      setCostInput((initialExpense.costMinor / 100).toString());
-      setPaidBy(initialExpense.paidBy);
-      setSplitBy(initialExpense.splitBy);
-      setParticipants(initialExpense.participants);
-      setComment(initialExpense.comment || '');
+    const source = initialExpense || initialItem;
+    if (source) {
+      setName(source.name);
+      setEmoji(source.emoji);
+      setCostInput(((source.costMinor || 0) / 100).toString());
+      setPaidBy(source.paidBy || currentUser.uid);
+      setSplitBy(source.splitBy || 'equal');
+      setParticipants(source.participants || memberList.map((m) => m.uid));
+      setComment(source.comment || '');
 
       const initialShares: Record<string, string> = {};
-      for (const [uid, minor] of Object.entries(initialExpense.shares)) {
-        initialShares[uid] = (minor / 100).toString();
+      if (source.shares) {
+        for (const [uid, minor] of Object.entries(source.shares)) {
+          initialShares[uid] = (minor / 100).toString();
+        }
       }
       setCustomSharesInput(initialShares);
     } else {
-      // Defaults for new expense
       setName('');
       setEmoji('📌');
       setCostInput('');
@@ -76,7 +82,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setComment('');
     }
     setError(null);
-  }, [isOpen, initialExpense, currentUser.uid]);
+  }, [isOpen, initialExpense, initialItem, currentUser.uid]);
 
   // Update emoji on name change
   const handleNameChange = (val: string) => {
@@ -157,7 +163,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={initialExpense ? 'Edit Expense' : 'Add Expense'}
+      title={title || (initialExpense || initialItem ? 'Edit Expense' : 'Add Expense')}
       emoji={emoji}
       maxWidth="lg"
     >
@@ -264,7 +270,48 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
         {/* Participants Selection & Amount Allocation */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          {/* Quick Slot Selection Pills */}
+          {event.slots && Object.keys(event.slots).length > 0 && (
+            <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                <Layers className="w-3 h-3 text-teal-500" />
+                Select By Group Slot:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.values(event.slots).map((slot) => {
+                  const slotUids = slot.assignedMemberUids || [];
+                  if (slotUids.length === 0) return null;
+                  const allSelected = slotUids.every((uid) => participants.includes(uid));
+
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => {
+                        if (allSelected) {
+                          const remaining = participants.filter((uid) => !slotUids.includes(uid));
+                          setParticipants(remaining.length > 0 ? remaining : [currentUser.uid]);
+                        } else {
+                          const merged = Array.from(new Set([...participants, ...slotUids]));
+                          setParticipants(merged);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all flex items-center gap-1 ${
+                        allSelected
+                          ? 'bg-teal-500/15 border-teal-500/40 text-teal-700 dark:text-teal-300'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-teal-500/30'
+                      }`}
+                    >
+                      <span>{slot.name}</span>
+                      <span className="text-[10px] opacity-70">({slotUids.length})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
               Participants ({participants.length}/{memberList.length})
             </label>

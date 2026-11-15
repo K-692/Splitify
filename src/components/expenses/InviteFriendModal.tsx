@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
-import { SplitifyEvent, Friendship, UserProfile } from '@/types';
+import { SplitifyEvent, Friendship, UserProfile, EventInvitationLink } from '@/types';
 import { dataService } from '@/services/dataService';
 import { Avatar } from '@/components/common/Avatar';
-import { Copy, Check, UserPlus, Users, Share2 } from 'lucide-react';
+import { Copy, Check, UserPlus, Users, Link as LinkIcon } from 'lucide-react';
 
 interface InviteFriendModalProps {
   isOpen: boolean;
@@ -23,6 +23,7 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
   const [friendProfiles, setFriendProfiles] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [invitationLink, setInvitationLink] = useState<EventInvitationLink | null>(null);
   const [invitingUid, setInvitingUid] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -30,13 +31,15 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
     if (!isOpen) return;
     setLoading(true);
 
+    dataService.createInvitationLink(event.id, currentUser).then((link) => {
+      setInvitationLink(link);
+    });
+
     const unsub = dataService.subscribeFriends(currentUser.uid, async (list) => {
       setFriendships(list);
-      // Fetch user profile for each friend
       const profiles: UserProfile[] = [];
       for (const fs of list) {
         const friendUid = fs.user1Uid === currentUser.uid ? fs.user2Uid : fs.user1Uid;
-        // In demo or live mode, fetch friend profile
         const p = await dataService.searchUserByUsername(
           friendUid.replace('demo_user_', '')
         );
@@ -47,14 +50,19 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
     });
 
     return () => unsub();
-  }, [isOpen, currentUser.uid]);
+  }, [isOpen, event.id, currentUser]);
 
-  const handleCopyCode = () => {
-    if (event.joinCode) {
-      navigator.clipboard.writeText(event.joinCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const appBaseUrl = window?.location?.origin
+    ? `${window.location.origin}${window.location.pathname}`
+    : 'https://k-692.github.io/Splitify/';
+  const inviteUrl = invitationLink
+    ? `${appBaseUrl}#/join/${invitationLink.token}`
+    : `${appBaseUrl}#/events/${event.id}`;
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleInvite = async (friend: UserProfile) => {
@@ -75,24 +83,24 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Invite Friends" emoji="🤝" maxWidth="md">
       <div className="space-y-5">
-        {/* Share Join Code */}
+        {/* Share Invitation Link */}
         <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
-              <Share2 className="w-3.5 h-3.5" /> Event Join Code
+              <LinkIcon className="w-3.5 h-3.5" /> Event Invitation Link
             </span>
-            <p className="text-xl font-black text-slate-900 dark:text-white tracking-widest mt-0.5 font-mono">
-              {event.joinCode || 'SPLIT1'}
+            <p className="text-xs font-mono text-slate-800 dark:text-slate-200 truncate mt-0.5 select-all">
+              {inviteUrl}
             </p>
           </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleCopyCode}
+            onClick={handleCopyLink}
             leftIcon={copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
           >
-            {copied ? 'Copied!' : 'Copy Code'}
+            {copied ? 'Copied!' : 'Copy Link'}
           </Button>
         </div>
 

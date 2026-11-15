@@ -1,5 +1,6 @@
 import {
   EventMember,
+  EventItem,
   ExpenseEntry,
   SettlementEntry,
   MemberFinancialSummary,
@@ -56,24 +57,79 @@ export function validateAmountShares(
 }
 
 /**
+ * Unified representation of an active financial expense
+ * (either a standalone EventItem or a category subitem ExpenseEntry)
+ */
+interface UnifiedExpense {
+  id: string;
+  itemId?: string;
+  costMinor: number;
+  paidBy: string;
+  payerName?: string;
+  shares: Record<string, number>;
+}
+
+/**
  * Computes the full financial overview for an event:
- * - Total expense (sum of active ordinary expenses)
- * - Individual spending, fair share, settlements, and net balances
- * - Zero-sum balance verification
- * - Debt simplification settlement suggestions
+ * - Aggregates standalone active items AND active category subitems
+ * - Never double-counts categories
+ * - Computes individual spending, fair share, settlements, and net balances
+ * - Verifies zero-sum balance invariant
+ * - Calculates minimal debt settlement suggestions
  */
 export function calculateEventFinancialOverview(
   members: Record<string, EventMember>,
   expenses: ExpenseEntry[],
   settlements: SettlementEntry[] = [],
-  currentUserId?: string
+  currentUserId?: string,
+  items: EventItem[] = []
 ): EventFinancialOverview {
-  // 1. Filter active (non-deleted) expenses
-  const activeExpenses = expenses.filter((e) => !e.deleted);
+  // 1. Collect all active ordinary expenses from items and subitems
+  const unifiedExpenses: UnifiedExpense[] = [];
+
+  // Build a map of category items
+  const categoryItemIds = new Set<string>();
+  const activeItemIds = new Set<string>();
+  for (const it of items) {
+    if (!it.deleted) {
+      activeItemIds.add(it.id);
+      if (it.isCategory) {
+        categoryItemIds.add(it.id);
+      } else if (!it.isSettlementsItem && it.costMinor && it.costMinor > 0) {
+        // Standalone Item is an expense directly
+        unifiedExpenses.push({
+          id: it.id,
+          itemId: it.id,
+          costMinor: it.costMinor,
+          paidBy: it.paidBy || '',
+          payerName: it.createdByName,
+          shares: it.shares || {},
+        });
+      }
+    }
+  }
+
+  // Active subitems under categories
+  for (const exp of expenses) {
+    if (!exp.deleted) {
+      // If items list was provided, ensure it belongs to an active category item
+      if (items.length === 0 || categoryItemIds.has(exp.itemId)) {
+        unifiedExpenses.push({
+          id: exp.id,
+          itemId: exp.itemId,
+          costMinor: exp.costMinor || 0,
+          paidBy: exp.paidBy,
+          payerName: exp.createdByName,
+          shares: exp.shares || {},
+        });
+      }
+    }
+  }
+
   const completedSettlements = settlements.filter((s) => s.status === 'completed');
 
   // Total ordinary expense
-  const totalExpenseMinor = activeExpenses.reduce((sum, e) => sum + (e.costMinor || 0), 0);
+  const totalExpenseMinor = unifiedExpenses.reduce((sum, e) => sum + (e.costMinor || 0), 0);
 
   // Initialize summary for every member
   const memberSummaries: Record<string, MemberFinancialSummary> = {};
@@ -93,6 +149,7 @@ export function calculateEventFinancialOverview(
 
   // Also account for any participant/payer not currently in members map
   const ensureMember = (uid: string, fallbackName?: string) => {
+    if (!uid) return;
     if (!memberSummaries[uid]) {
       memberSummaries[uid] = {
         uid,
@@ -107,9 +164,11 @@ export function calculateEventFinancialOverview(
   };
 
   // 2. Accumulate ordinary expenses
-  for (const exp of activeExpenses) {
-    ensureMember(exp.paidBy, exp.createdByName);
-    memberSummaries[exp.paidBy].spentMinor += exp.costMinor || 0;
+  for (const exp of unifiedExpenses) {
+    if (exp.paidBy) {
+      ensureMember(exp.paidBy, exp.payerName);
+      memberSummaries[exp.paidBy].spentMinor += exp.costMinor || 0;
+    }
 
     if (exp.shares) {
       for (const [uid, share] of Object.entries(exp.shares)) {

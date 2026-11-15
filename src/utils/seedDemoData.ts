@@ -45,7 +45,6 @@ export function initializeDemoDataIfEmpty(): void {
     hostUid: krish.uid,
     createdAt: earlier,
     updatedAt: now,
-    joinCode: 'GOA2026',
     members: {
       [krish.uid]: krish,
       [rahul.uid]: rahul,

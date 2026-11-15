@@ -226,4 +226,91 @@ describe('Financial Calculations Engine', () => {
     expect(finalOverview.settlementSuggestions).toHaveLength(0);
     expect(finalOverview.isBalanced).toBe(true);
   });
+
+  it('should accurately calculate standalone items and category subitems together in Item-First architecture', () => {
+    const members: Record<string, EventMember> = {
+      uidA: { uid: 'uidA', displayName: 'A', joinedAt: 1, role: 'host' },
+      uidB: { uid: 'uidB', displayName: 'B', joinedAt: 2, role: 'member' },
+    };
+
+    // Item 1: Standalone Direct Expense (e.g. Airport Cab ₹1,200 paid by A)
+    const standaloneItem = {
+      id: 'item1',
+      eventId: 'evt1',
+      name: 'Airport Cab',
+      emoji: '🚕',
+      isCategory: false,
+      costMinor: 120000,
+      paidBy: 'uidA',
+      splitBy: 'equal' as const,
+      participants: ['uidA', 'uidB'],
+      shares: { uidA: 60000, uidB: 60000 },
+      createdAt: 100,
+      updatedAt: 100,
+    };
+
+    // Item 2: Category (e.g. Dinner Outing) with subitems in `expenses`
+    const categoryItem = {
+      id: 'item2',
+      eventId: 'evt1',
+      name: 'Dinner Outing',
+      emoji: '🍽️',
+      isCategory: true,
+      createdAt: 200,
+      updatedAt: 200,
+    };
+
+    const subitem1: ExpenseEntry = {
+      id: 'exp1',
+      eventId: 'evt1',
+      itemId: 'item2',
+      name: 'Main Courses',
+      emoji: '🍛',
+      costMinor: 180000, // ₹1,800 paid by B
+      paidBy: 'uidB',
+      splitBy: 'equal',
+      participants: ['uidA', 'uidB'],
+      shares: { uidA: 90000, uidB: 90000 },
+      createdBy: 'uidB',
+      createdByName: 'B',
+      createdAt: 210,
+      lastModifiedBy: 'uidB',
+      lastModifiedByName: 'B',
+      lastModifiedAt: 210,
+      auditLogs: [],
+    };
+
+    const overview = calculateEventFinancialOverview(
+      members,
+      [subitem1],
+      [],
+      'uidA',
+      [standaloneItem, categoryItem]
+    );
+
+    // Total should be ₹1,200 + ₹1,800 = ₹3,000 (300000 minor)
+    expect(overview.totalExpenseMinor).toBe(300000);
+
+    // A paid ₹1,200, share ₹1,500 (600 + 900) -> Net: -₹300 (owes B ₹300)
+    expect(overview.memberSummaries['uidA'].spentMinor).toBe(120000);
+    expect(overview.memberSummaries['uidA'].shareMinor).toBe(150000);
+    expect(overview.memberSummaries['uidA'].netBalanceMinor).toBe(-30000);
+
+    // B paid ₹1,800, share ₹1,500 (600 + 900) -> Net: +₹300 (gets ₹300)
+    expect(overview.memberSummaries['uidB'].spentMinor).toBe(180000);
+    expect(overview.memberSummaries['uidB'].shareMinor).toBe(150000);
+    expect(overview.memberSummaries['uidB'].netBalanceMinor).toBe(30000);
+
+    // Zero-sum check
+    expect(overview.isBalanced).toBe(true);
+    expect(overview.settlementSuggestions).toEqual([
+      {
+        fromUid: 'uidA',
+        fromName: 'A',
+        toUid: 'uidB',
+        toName: 'B',
+        amountMinor: 30000,
+      },
+    ]);
+  });
 });

@@ -43,6 +43,37 @@ export interface EventMember {
   username?: string;
   joinedAt: number;
   role: 'host' | 'member';
+  slotId?: string; // Assigned slot in the event, if any
+  scope?: 'full' | 'selected_items'; // Access scope
+  allowedItemIds?: string[]; // Specific items authorized for selected_items scope
+}
+
+export interface EventSlot {
+  id: string;
+  eventId: string;
+  name: string; // e.g. "Car 1", "Room 102", "Self Arrangement"
+  description?: string;
+  maxCapacity: number; // e.g. 4
+  assignedMemberUids: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface EventInvitationLink {
+  id: string;
+  token: string; // Unique URL token
+  eventId: string;
+  eventName: string;
+  eventEmoji: string;
+  createdByUid: string;
+  createdByName: string;
+  createdAt: number;
+  scope: 'full' | 'selected_items';
+  allowedItemIds?: string[]; // Item IDs allowed if scope === 'selected_items'
+  revoked?: boolean;
+  maxUses?: number;
+  usesCount: number;
+  expiresAt?: number;
 }
 
 export interface SplitifyEvent {
@@ -51,10 +82,13 @@ export interface SplitifyEvent {
   emoji: string;
   currency: string; // default "INR" (₹)
   members: Record<string, EventMember>;
+  slots?: Record<string, EventSlot>;
   hostUid: string;
   createdAt: number;
   updatedAt: number;
-  joinCode?: string;
+  deleted?: boolean;
+  deletedAt?: number;
+  deletedBy?: string;
 }
 
 export interface EventInvitation {
@@ -68,17 +102,8 @@ export interface EventInvitation {
   toDisplayName: string;
   status: 'pending' | 'accepted' | 'declined';
   createdAt: number;
-}
-
-export interface EventItem {
-  id: string;
-  eventId: string;
-  name: string;
-  emoji: string;
-  isSettlementsItem?: boolean;
-  createdAt: number;
-  updatedAt: number;
-  deleted?: boolean;
+  scope?: 'full' | 'selected_items';
+  allowedItemIds?: string[];
 }
 
 export interface ExpenseAuditLog {
@@ -92,10 +117,44 @@ export interface ExpenseAuditLog {
   summary?: string;
 }
 
+/**
+ * An EventItem can be:
+ * 1. A standalone expense (isCategory === false/undefined), containing costMinor, paidBy, splitBy, etc.
+ * 2. A category (isCategory === true), whose total is computed dynamically from its subitems in ExpenseEntry.
+ * 3. The system-generated Settlements item (isSettlementsItem === true).
+ */
+export interface EventItem {
+  id: string;
+  eventId: string;
+  name: string;
+  emoji: string;
+  isCategory?: boolean; // When true, acts as a category with subitems
+  isSettlementsItem?: boolean;
+  createdAt: number;
+  updatedAt: number;
+  deleted?: boolean;
+  deletedAt?: number;
+  deletedBy?: string;
+
+  // Direct expense properties (when isCategory is false/undefined)
+  costMinor?: number; // Integer minor currency units (paise/cents: 100000 = 1000.00)
+  paidBy?: string; // UID of payer
+  splitBy?: SplitMode;
+  participants?: string[]; // UIDs of participants
+  shares?: Record<string, number>; // UID -> minor unit amount
+  comment?: string;
+  createdBy?: string;
+  createdByName?: string;
+  lastModifiedBy?: string;
+  lastModifiedByName?: string;
+  lastModifiedAt?: number;
+  auditLogs?: ExpenseAuditLog[];
+}
+
 export interface ExpenseEntry {
   id: string;
   eventId: string;
-  itemId: string;
+  itemId: string; // Belongs to parent category item
   name: string;
   emoji: string;
   costMinor: number; // Stored in minor currency units (paise/cents: 100000 = 1000.00)

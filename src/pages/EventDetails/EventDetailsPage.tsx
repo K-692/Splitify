@@ -10,16 +10,17 @@ import {
   SettlementSuggestion,
 } from '@/types';
 import { dataService } from '@/services/dataService';
-import {
-  calculateEventFinancialOverview,
-} from '@/domain/calculations/finance';
+import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { formatCurrency } from '@/utils/currency';
+import { generatePlainTextExpenseReport } from '@/utils/exportReport';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
+import { Modal } from '@/components/common/Modal';
 import { ExpenseModal } from '@/components/expenses/ExpenseModal';
 import { SettlementModal } from '@/components/dashboard/SettlementModal';
 import { BulkDeleteModal } from '@/components/expenses/BulkDeleteModal';
-import { InviteFriendModal } from '@/components/expenses/InviteFriendModal';
+import { ShareInviteModal } from '@/components/events/ShareInviteModal';
+import { SlotsModal } from '@/components/events/SlotsModal';
 import {
   Plus,
   ChevronDown,
@@ -34,6 +35,10 @@ import {
   CheckCircle,
   FolderPlus,
   Share2,
+  Copy,
+  Layers,
+  LogOut,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const EventDetailsPage: React.FC = () => {
@@ -61,14 +66,11 @@ export const EventDetailsPage: React.FC = () => {
   const [isEditingEventName, setIsEditingEventName] = useState(false);
   const [newEventName, setNewEventName] = useState('');
 
-  // Inline item rename state
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [newItemName, setNewItemName] = useState('');
-
   // Modals state
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [activeTargetItemId, setActiveTargetItemId] = useState<string>('');
+  const [targetCategoryItemId, setTargetCategoryItemId] = useState<string | null>(null);
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
+  const [editingItem, setEditingItem] = useState<EventItem | null>(null);
 
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState<SettlementSuggestion | null>(null);
@@ -76,15 +78,14 @@ export const EventDetailsPage: React.FC = () => {
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  // Feature expansion modals
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isSlotsModalOpen, setIsSlotsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Expanded audit log view under subitems
   const [expandedAuditLogs, setExpandedAuditLogs] = useState<Record<string, boolean>>({});
-
-  // New Item input modal/trigger
-  const [isAddingItem, setIsAddingItem] = useState(false);
-  const [newItemInput, setNewItemInput] = useState('');
 
   useEffect(() => {
     if (!eventId) return;
@@ -120,16 +121,17 @@ export const EventDetailsPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Compute authoritative financial overview
+  // Compute authoritative financial overview (includes standalone items and category subitems)
   const financialOverview = useMemo(() => {
     if (!event) return null;
     return calculateEventFinancialOverview(
       event.members,
       expenses,
       settlements,
-      user?.uid
+      user?.uid,
+      items
     );
-  }, [event, expenses, settlements, user?.uid]);
+  }, [event, expenses, settlements, user?.uid, items]);
 
   // Map expenses by itemId
   const expensesByItem = useMemo(() => {
@@ -149,11 +151,16 @@ export const EventDetailsPage: React.FC = () => {
   // Compute item totals
   const itemTotalsMinor = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const [itemId, exps] of Object.entries(expensesByItem)) {
-      map[itemId] = exps.reduce((sum, e) => sum + (e.costMinor || 0), 0);
+    for (const item of items) {
+      if (item.isCategory) {
+        const exps = expensesByItem[item.id] || [];
+        map[item.id] = exps.reduce((sum, e) => sum + (e.costMinor || 0), 0);
+      } else {
+        map[item.id] = item.costMinor || 0;
+      }
     }
     return map;
-  }, [expensesByItem]);
+  }, [items, expensesByItem]);
 
   // Selected expenses calculations
   const selectedExpenses = useMemo(() => {
@@ -169,8 +176,8 @@ export const EventDetailsPage: React.FC = () => {
     setCollapsedItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
   };
 
-  const handleToggleAuditLog = (expenseId: string) => {
-    setExpandedAuditLogs((prev) => ({ ...prev, [expenseId]: !prev[expenseId] }));
+  const handleToggleAuditLog = (id: string) => {
+    setExpandedAuditLogs((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleRenameEvent = async () => {
@@ -184,45 +191,145 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  const handleCreateItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!event || !newItemInput.trim()) return;
-    try {
-      await dataService.createItem(event.id, newItemInput.trim());
-      setNewItemInput('');
-      setIsAddingItem(false);
-      showToast('New item added');
-    } catch (err: any) {
-      alert(err.message || 'Failed to add item');
-    }
-  };
-
-  const handleRenameItem = async (itemId: string) => {
-    if (!event || !newItemName.trim()) return;
-    try {
-      await dataService.updateItemName(event.id, itemId, newItemName.trim());
-      setEditingItemId(null);
-      showToast('Item renamed');
-    } catch (err: any) {
-      alert(err.message || 'Failed to rename item');
-    }
-  };
-
   const handleDeleteItem = async (item: EventItem) => {
     if (!event || !user) return;
     const itemExps = expensesByItem[item.id] || [];
     const count = itemExps.length;
     const msg = count > 0
       ? `Delete "${item.name}" and all ${count} active expense(s) inside it?`
-      : `Delete empty item "${item.name}"?`;
+      : `Delete "${item.name}"?`;
     if (!window.confirm(msg)) return;
 
     try {
       await dataService.deleteItem(event.id, item.id, user);
-      showToast('Item deleted');
+      showToast('Expense item deleted');
     } catch (err: any) {
       alert(err.message || 'Failed to delete item');
     }
+  };
+
+  // Convert standalone item to category with subitems
+  const handleConvertToCategory = async (itemId: string) => {
+    if (!event || !user) return;
+    try {
+      await dataService.convertItemToCategory(event.id, itemId, user);
+      showToast('Converted to category! You can now add subitems.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to convert item');
+    }
+  };
+
+  // Plain-Text Export
+  const handleCopyExpenses = async () => {
+    if (!event) return;
+    try {
+      const appBaseUrl = window?.location?.origin
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://k-692.github.io/Splitify/';
+      const report = generatePlainTextExpenseReport(
+        event,
+        items,
+        expenses,
+        settlements,
+        `${appBaseUrl}#/events/${event.id}`
+      );
+
+      await navigator.clipboard.writeText(report);
+      showToast('📋 Expenses report copied to clipboard!');
+
+      // Offer native share on mobile if supported
+      if (navigator.share && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        try {
+          await navigator.share({
+            title: `${event.name} — Expenses Report`,
+            text: report,
+          });
+        } catch {
+          // User dismissed share dialog
+        }
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to copy expenses report');
+    }
+  };
+
+  // Delete event (host only)
+  const handleConfirmDeleteEvent = async () => {
+    if (!event || !user) return;
+    try {
+      await dataService.deleteEvent(event.id, user);
+      setIsDeleteModalOpen(false);
+      navigate('/');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete event');
+    }
+  };
+
+  // Leave event (member only)
+  const handleConfirmLeaveEvent = async () => {
+    if (!event || !user) return;
+    try {
+      await dataService.leaveEvent(event.id, user);
+      setIsLeaveModalOpen(false);
+      navigate('/');
+    } catch (err: any) {
+      alert(err.message || 'Failed to leave event');
+    }
+  };
+
+  // Save Expense (Handles standalone items, subitems, and edits)
+  const handleSaveExpense = async (data: any) => {
+    if (!event || !user) return;
+
+    if (editingItem) {
+      // Editing a standalone item
+      await dataService.updateExpenseItem(
+        event.id,
+        editingItem.id,
+        data,
+        user,
+        event.members
+      );
+      showToast('Expense updated');
+    } else if (editingExpense) {
+      // Editing a subitem
+      await dataService.updateExpense(
+        event.id,
+        editingExpense.id,
+        data,
+        user,
+        event.members
+      );
+      showToast('Expense updated');
+    } else if (targetCategoryItemId) {
+      // Adding a subitem to a category
+      await dataService.createExpense(
+        {
+          ...data,
+          eventId: event.id,
+          itemId: targetCategoryItemId,
+        },
+        user,
+        event.members
+      );
+      showToast('Subitem added');
+    } else {
+      // Item-First: Adding a standalone expense item directly!
+      await dataService.createExpenseItem(
+        {
+          ...data,
+          eventId: event.id,
+        },
+        user,
+        event.members
+      );
+      showToast('New expense item added');
+    }
+
+    setIsExpenseModalOpen(false);
+    setEditingItem(null);
+    setEditingExpense(null);
+    setTargetCategoryItemId(null);
   };
 
   const handleToggleSelectAllEvent = () => {
@@ -270,31 +377,6 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  const handleSaveExpense = async (data: any) => {
-    if (!event || !user) return;
-    if (editingExpense) {
-      await dataService.updateExpense(
-        event.id,
-        editingExpense.id,
-        data,
-        user,
-        event.members
-      );
-      showToast('Expense updated');
-    } else {
-      await dataService.createExpense(
-        {
-          ...data,
-          eventId: event.id,
-          itemId: activeTargetItemId,
-        },
-        user,
-        event.members
-      );
-      showToast('Expense created');
-    }
-  };
-
   const handleDeleteSingleExpense = async (expense: ExpenseEntry) => {
     if (!event || !user) return;
     if (!window.confirm(`Delete expense "${expense.name}"?`)) return;
@@ -330,17 +412,20 @@ export const EventDetailsPage: React.FC = () => {
     return (
       <div className="text-center py-16">
         <h2 className="text-xl font-bold">Event not found</h2>
-        <Button variant="primary" className="mt-4" onClick={() => navigate('/events')}>
-          Back to Events
+        <Button variant="primary" className="mt-4" onClick={() => navigate('/')}>
+          Back to Home
         </Button>
       </div>
     );
   }
 
   const currency = event.currency || 'INR';
+  const isHost = event.hostUid === user.uid;
+  const activeItems = items.filter((i) => !i.deleted);
+  const slotsCount = Object.keys(event.slots || {}).length;
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 max-w-5xl mx-auto">
       {/* Toast alert */}
       {toastMessage && (
         <div className="fixed top-20 right-4 z-50 bg-[#203D62] text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
@@ -350,8 +435,8 @@ export const EventDetailsPage: React.FC = () => {
       )}
 
       {/* Top Event Header */}
-      <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-[#15263C] rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Title & Emoji */}
           <div className="flex items-center gap-3.5 flex-1 min-w-0">
             <span className="w-14 h-14 rounded-2xl bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center text-3xl shadow-inner flex-shrink-0 select-none">
@@ -376,7 +461,7 @@ export const EventDetailsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="flex items-center gap-2 group">
-                  <h1 className="text-2xl sm:text-3xl font-black text-[#203D62] dark:text-white tracking-tight truncate">
+                  <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-[#203D62] dark:text-white tracking-tight truncate">
                     {event.name}
                   </h1>
                   <button
@@ -385,16 +470,21 @@ export const EventDetailsPage: React.FC = () => {
                       setIsEditingEventName(true);
                     }}
                     className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Edit event name (all members can edit)"
+                    title="Edit event name"
                   >
-                    <Edit2 className="w-4 h-4" />
+                    <Edit2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
-              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+              <div className="flex items-center gap-2.5 mt-1 text-xs text-slate-500 dark:text-slate-400 font-semibold flex-wrap">
                 <span className="flex items-center gap-1">
                   <Users className="w-3.5 h-3.5 text-teal-500" />
                   {Object.keys(event.members).length} members
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Layers className="w-3.5 h-3.5 text-amber-500" />
+                  {slotsCount} {slotsCount === 1 ? 'slot' : 'slots'}
                 </span>
                 <span>•</span>
                 <span>Currency: {currency}</span>
@@ -404,36 +494,82 @@ export const EventDetailsPage: React.FC = () => {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Copy Expenses Button */}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsInviteModalOpen(true)}
-              leftIcon={<Share2 className="w-3.5 h-3.5 text-teal-500" />}
+              onClick={handleCopyExpenses}
+              title="Copy formatted expenses summary with invitation link at the top"
+              className="text-teal-700 dark:text-teal-300 font-bold"
             >
-              Invite / Code
+              <Copy className="w-3.5 h-3.5 mr-1 text-teal-500" />
+              Copy Expenses
             </Button>
+
+            {/* Share / Invite Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsShareModalOpen(true)}
+              className="font-bold"
+            >
+              <Share2 className="w-3.5 h-3.5 mr-1 text-teal-500" />
+              Share / Invite
+            </Button>
+
+            {/* Slots / Groups Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSlotsModalOpen(true)}
+              className="font-bold"
+            >
+              <Layers className="w-3.5 h-3.5 mr-1 text-amber-500" />
+              Slots ({slotsCount})
+            </Button>
+
+            {/* Primary Add Expense Button */}
             <Button
               variant="primary"
               size="sm"
               onClick={() => {
-                if (items.length === 0) {
-                  setIsAddingItem(true);
-                } else {
-                  setActiveTargetItemId(items[0].id);
-                  setEditingExpense(null);
-                  setIsExpenseModalOpen(true);
-                }
+                setTargetCategoryItemId(null);
+                setEditingExpense(null);
+                setEditingItem(null);
+                setIsExpenseModalOpen(true);
               }}
-              leftIcon={<Plus className="w-4 h-4" />}
+              className="shadow-md shadow-teal-500/20"
             >
+              <Plus className="w-4 h-4 mr-1" />
               Add Expense
             </Button>
+
+            {/* Event Management: Delete (Host) or Leave (Member) */}
+            {isHost ? (
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(true)}
+                title="Delete Event (Host Only)"
+                className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsLeaveModalOpen(true)}
+                title="Leave Event"
+                className="p-2 rounded-xl text-slate-400 hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Financial KPI Summary Cards */}
         {financialOverview && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-6 pt-6 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800/80">
             {/* Total Expense */}
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -442,7 +578,7 @@ export const EventDetailsPage: React.FC = () => {
               <p className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1">
                 {formatCurrency(financialOverview.totalExpenseMinor, currency)}
               </p>
-              <span className="text-[10px] text-slate-400">Ordinary active expenses</span>
+              <span className="text-[10px] text-slate-400">Combined items & subitems</span>
             </div>
 
             {/* Your Fair Share */}
@@ -454,26 +590,22 @@ export const EventDetailsPage: React.FC = () => {
                 {formatCurrency(financialOverview.currentUserShareMinor, currency)}
               </p>
               <span className="text-[10px] text-slate-400">
-                You spent {formatCurrency(financialOverview.currentUserSpentMinor, currency)}
+                You paid {formatCurrency(financialOverview.currentUserSpentMinor, currency)}
               </span>
             </div>
 
-            {/* Net Position (You Owe / You're Owed) */}
+            {/* Your Net Balance */}
             <div
-              className={`p-4 rounded-2xl border transition-all ${
+              className={`p-4 rounded-2xl border ${
                 financialOverview.currentUserNetBalanceMinor > 0
-                  ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200'
+                  ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-800/60'
                   : financialOverview.currentUserNetBalanceMinor < 0
-                  ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200'
-                  : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                  ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200/80 dark:border-rose-800/60'
+                  : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800'
               }`}
             >
-              <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">
-                {financialOverview.currentUserNetBalanceMinor > 0
-                  ? "You're Owed (Get Back)"
-                  : financialOverview.currentUserNetBalanceMinor < 0
-                  ? 'You Owe'
-                  : 'Your Balance'}
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Your Net Balance
               </span>
               <p
                 className={`text-xl sm:text-2xl font-black mt-1 ${
@@ -494,9 +626,9 @@ export const EventDetailsPage: React.FC = () => {
               </p>
               <span className="text-[10px] opacity-75">
                 {financialOverview.currentUserNetBalanceMinor > 0
-                  ? 'Other members need to pay you'
+                  ? 'Other members owe you'
                   : financialOverview.currentUserNetBalanceMinor < 0
-                  ? 'You need to pay other members'
+                  ? 'You need to settle with others'
                   : 'No outstanding debt for you'}
               </span>
             </div>
@@ -505,20 +637,20 @@ export const EventDetailsPage: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('hierarchy')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all ${
+          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all whitespace-nowrap ${
             activeTab === 'hierarchy'
               ? 'bg-[#203D62] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          Expenses ({expenses.filter((e) => !e.deleted).length})
+          Expenses ({activeItems.length})
         </button>
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 ${
+          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeTab === 'dashboard'
               ? 'bg-[#203D62] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -531,7 +663,7 @@ export const EventDetailsPage: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('members')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all ${
+          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all whitespace-nowrap ${
             activeTab === 'members'
               ? 'bg-[#203D62] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -542,35 +674,35 @@ export const EventDetailsPage: React.FC = () => {
       </div>
 
       {/* ==================================================== */}
-      {/* TAB 1: EXPENSE HIERARCHY */}
+      {/* TAB 1: ITEM-FIRST EXPENSES */}
       {/* ==================================================== */}
       {activeTab === 'hierarchy' && (
         <div className="space-y-4">
-          {/* Global Event-Level Selection Bar (Floating or Top) */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleToggleSelectAllEvent}
-                className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-teal-600"
-              >
-                {selectedExpenses.length > 0 &&
-                selectedExpenses.length === expenses.filter((e) => !e.deleted).length ? (
-                  <CheckSquare className="w-4 h-4 text-teal-500" />
-                ) : (
-                  <Square className="w-4 h-4 text-slate-400" />
+          {/* Global Selection Bar if subitems exist */}
+          {expenses.filter((e) => !e.deleted).length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAllEvent}
+                  className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-teal-600"
+                >
+                  {selectedExpenses.length > 0 &&
+                  selectedExpenses.length === expenses.filter((e) => !e.deleted).length ? (
+                    <CheckSquare className="w-4 h-4 text-teal-500" />
+                  ) : (
+                    <Square className="w-4 h-4 text-slate-400" />
+                  )}
+                  <span>Select All ({selectedExpenses.length} selected)</span>
+                </button>
+
+                {selectedExpenses.length > 0 && (
+                  <span className="text-xs font-extrabold text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-950/60 px-2 py-0.5 rounded-full">
+                    Total: {formatCurrency(selectedTotalMinor, currency)}
+                  </span>
                 )}
-                <span>Select All Expenses ({selectedExpenses.length} selected)</span>
-              </button>
+              </div>
 
-              {selectedExpenses.length > 0 && (
-                <span className="text-xs font-extrabold text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-950/60 px-2 py-0.5 rounded-full">
-                  Total: {formatCurrency(selectedTotalMinor, currency)}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
               {selectedExpenses.length > 0 && (
                 <Button
                   variant="danger"
@@ -581,322 +713,214 @@ export const EventDetailsPage: React.FC = () => {
                   Delete Selected ({selectedExpenses.length})
                 </Button>
               )}
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAddingItem(true)}
-                leftIcon={<FolderPlus className="w-3.5 h-3.5 text-teal-500" />}
-              >
-                New Category / Item
-              </Button>
             </div>
-          </div>
-
-          {/* Add Item Form (Inline) */}
-          {isAddingItem && (
-            <form
-              onSubmit={handleCreateItem}
-              className="p-4 rounded-3xl bg-white dark:bg-[#15263C] border-2 border-teal-500/50 shadow-md space-y-3"
-            >
-              <h4 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <FolderPlus className="w-4 h-4 text-teal-500" />
-                Add New Item / Category
-              </h4>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. Transportation, Accommodation, Food, Shopping..."
-                  value={newItemInput}
-                  onChange={(e) => setNewItemInput(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  autoFocus
-                  required
-                />
-                <Button type="submit" size="sm">
-                  Add Item
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsAddingItem(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
           )}
 
           {/* Empty state */}
-          {items.length === 0 && !isAddingItem && (
-            <div className="text-center py-16 px-4 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
-              <span className="text-4xl">🏝️</span>
+          {activeItems.length === 0 && (
+            <div className="text-center py-16 px-4 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-4xl">🧾</span>
               <h3 className="text-lg font-bold text-slate-800 dark:text-white mt-2">
-                No items or expenses yet
+                No expenses recorded yet
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                Create your first category (like Transportation, Hotel, or Food) to start logging
-                shared expenses!
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+                Add an expense item directly (like Airport Cab, Dinner, or Tickets) and split with members or slots!
               </p>
               <Button
                 variant="primary"
                 size="md"
-                className="mt-4"
-                onClick={() => setIsAddingItem(true)}
-                leftIcon={<Plus className="w-4 h-4" />}
+                className="mt-5"
+                onClick={() => {
+                  setTargetCategoryItemId(null);
+                  setEditingExpense(null);
+                  setEditingItem(null);
+                  setIsExpenseModalOpen(true);
+                }}
               >
-                Create First Item
+                <Plus className="w-4 h-4 mr-1.5" />
+                Add Your First Expense
               </Button>
             </div>
           )}
 
-          {/* Hierarchical Item List */}
+          {/* Item-First List */}
           <div className="space-y-4">
-            {items.map((item) => {
+            {activeItems.map((item) => {
+              const isCategory = Boolean(item.isCategory);
+              const isSettlement = Boolean(item.isSettlementsItem);
               const isCollapsed = Boolean(collapsedItems[item.id]);
               const itemExpenses = expensesByItem[item.id] || [];
               const itemTotalMinor = itemTotalsMinor[item.id] || 0;
               const allItemExpensesSelected =
                 itemExpenses.length > 0 && itemExpenses.every((e) => selectedExpenseIds[e.id]);
 
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white dark:bg-[#15263C] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden transition-all"
-                >
-                  {/* Item Header Accordion */}
-                  <div className="p-4 sm:p-5 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/60 select-none">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {/* Collapse toggle */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleItemCollapse(item.id)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                      >
-                        {isCollapsed ? (
-                          <ChevronRight className="w-5 h-5" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5" />
-                        )}
-                      </button>
-
-                      {/* Item level select all */}
-                      {!item.isSettlementsItem && itemExpenses.length > 0 && (
+              // ----------------------------------------------------
+              // A. CATEGORY ITEM (Contains subitems)
+              // ----------------------------------------------------
+              if (isCategory) {
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white dark:bg-[#15263C] rounded-3xl border border-teal-500/30 dark:border-teal-500/20 shadow-sm overflow-hidden transition-all"
+                  >
+                    {/* Category Header */}
+                    <div className="p-4 sm:p-5 flex items-center justify-between gap-3 bg-teal-500/5 dark:bg-teal-950/20 border-b border-teal-500/10 select-none">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <button
                           type="button"
-                          onClick={() => handleToggleSelectItem(item.id)}
-                          className="text-slate-400 hover:text-teal-600 transition-colors"
-                          title="Select all subitems in this item"
+                          onClick={() => handleToggleItemCollapse(item.id)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                         >
-                          {allItemExpensesSelected ? (
-                            <CheckSquare className="w-4 h-4 text-teal-500" />
+                          {isCollapsed ? (
+                            <ChevronRight className="w-5 h-5" />
                           ) : (
-                            <Square className="w-4 h-4" />
+                            <ChevronDown className="w-5 h-5" />
                           )}
                         </button>
-                      )}
 
-                      {/* Emoji & Name */}
-                      <span className="text-2xl flex-shrink-0">{item.emoji}</span>
-
-                      {editingItemId === item.id ? (
-                        <div className="flex items-center gap-2 flex-1">
-                          <input
-                            type="text"
-                            value={newItemName}
-                            onChange={(e) => setNewItemName(e.target.value)}
-                            className="px-2 py-1 text-sm font-black rounded-lg border border-teal-500 bg-white dark:bg-slate-800"
-                            autoFocus
-                          />
-                          <Button size="sm" onClick={() => handleRenameItem(item.id)}>
-                            Save
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingItemId(null)}>
-                            Cancel
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="min-w-0 flex-1 flex items-center gap-2">
-                          <h3
-                            onClick={() => handleToggleItemCollapse(item.id)}
-                            className="text-base sm:text-lg font-black text-[#203D62] dark:text-white truncate cursor-pointer hover:text-teal-600"
+                        {itemExpenses.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSelectItem(item.id)}
+                            className="text-slate-400 hover:text-teal-600 transition-colors"
+                            title="Select all subitems in this category"
                           >
-                            {item.name}
-                          </h3>
-                          {!item.isSettlementsItem && (
-                            <button
-                              onClick={() => {
-                                setNewItemName(item.name);
-                                setEditingItemId(item.id);
-                              }}
-                              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                              title="Rename Item"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                            {allItemExpensesSelected ? (
+                              <CheckSquare className="w-4 h-4 text-teal-500" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
 
-                    {/* Calculated Total & Item Actions */}
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-slate-400 dark:text-slate-500 block text-[10px] uppercase">
-                          Item Total
-                        </span>
-                        <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                          {formatCurrency(itemTotalMinor, currency)}
-                        </span>
+                        <span className="text-2xl flex-shrink-0">{item.emoji}</span>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-600 dark:text-teal-400">
+                              Category
+                            </span>
+                            <h3
+                              onClick={() => handleToggleItemCollapse(item.id)}
+                              className="text-base sm:text-lg font-black text-[#203D62] dark:text-white truncate cursor-pointer hover:text-teal-600"
+                            >
+                              {item.name}
+                            </h3>
+                          </div>
+                          <span className="text-[11px] text-slate-400 font-medium">
+                            {itemExpenses.length} {itemExpenses.length === 1 ? 'subitem' : 'subitems'}
+                          </span>
+                        </div>
                       </div>
 
-                      {!item.isSettlementsItem && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="teal"
-                            size="sm"
-                            onClick={() => {
-                              setActiveTargetItemId(item.id);
-                              setEditingExpense(null);
-                              setIsExpenseModalOpen(true);
-                            }}
-                            className="!px-2.5 !py-1.5 text-xs font-bold"
-                            leftIcon={<Plus className="w-3.5 h-3.5" />}
-                          >
-                            Add
-                          </Button>
-                          <button
-                            onClick={() => handleDeleteItem(item)}
-                            className="p-2 text-slate-400 hover:text-rose-500 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 block text-[10px] uppercase">
+                            Total
+                          </span>
+                          <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                            {formatCurrency(itemTotalMinor, currency)}
+                          </span>
                         </div>
-                      )}
+
+                        <Button
+                          variant="teal"
+                          size="sm"
+                          onClick={() => {
+                            setTargetCategoryItemId(item.id);
+                            setEditingExpense(null);
+                            setEditingItem(null);
+                            setIsExpenseModalOpen(true);
+                          }}
+                          className="!py-1 !px-2.5 text-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1" />
+                          Add Subitem
+                        </Button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteItem(item)}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                          title="Delete Category"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Subitems List */}
-                  {!isCollapsed && (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                      {itemExpenses.length === 0 ? (
-                        <div className="p-6 text-center text-xs text-slate-400">
-                          No expenses in this item yet.{' '}
-                          <button
-                            onClick={() => {
-                              setActiveTargetItemId(item.id);
-                              setEditingExpense(null);
-                              setIsExpenseModalOpen(true);
-                            }}
-                            className="text-teal-500 font-bold hover:underline ml-1"
-                          >
-                            + Add first subitem
-                          </button>
-                        </div>
-                      ) : (
-                        itemExpenses.map((expense) => {
-                          const isSelected = Boolean(selectedExpenseIds[expense.id]);
-                          const isAuditOpen = Boolean(expandedAuditLogs[expense.id]);
-                          const payerMember = event.members[expense.paidBy];
+                    {/* Subitems List under Category */}
+                    {!isCollapsed && (
+                      <div className="p-3 sm:p-4 space-y-2.5 bg-slate-50/40 dark:bg-slate-900/40">
+                        {itemExpenses.length === 0 ? (
+                          <div className="text-center py-6 text-xs text-slate-400">
+                            No subitems in this category yet. Click "Add Subitem" above!
+                          </div>
+                        ) : (
+                          itemExpenses.map((expense) => {
+                            const isSelected = Boolean(selectedExpenseIds[expense.id]);
+                            const isAuditExpanded = Boolean(expandedAuditLogs[expense.id]);
+                            const payer = event.members[expense.paidBy];
 
-                          return (
-                            <div
-                              key={expense.id}
-                              className={`p-4 transition-colors ${
-                                isSelected
-                                  ? 'bg-teal-50/50 dark:bg-teal-950/20'
-                                  : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/20'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                {/* Left checkbox & details */}
-                                <div className="flex items-start gap-3 min-w-0 flex-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleSelectExpense(expense.id)}
-                                    className="mt-1 text-slate-400 hover:text-teal-600 transition-colors flex-shrink-0"
-                                  >
-                                    {isSelected ? (
-                                      <CheckSquare className="w-4 h-4 text-teal-500" />
-                                    ) : (
-                                      <Square className="w-4 h-4" />
-                                    )}
-                                  </button>
-
-                                  <span className="text-xl select-none flex-shrink-0 mt-0.5">
-                                    {expense.emoji}
-                                  </span>
-
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                                        {expense.name}
-                                      </h4>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                                        {expense.splitBy === 'equal'
-                                          ? 'Equal Split'
-                                          : 'Custom Split'}{' '}
-                                        ({expense.participants.length} people)
-                                      </span>
-                                    </div>
-
-                                    {/* Payer info */}
-                                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                                      <span>Paid by</span>
-                                      <Avatar
-                                        src={payerMember?.photoURL}
-                                        name={payerMember?.displayName || expense.createdByName}
-                                        size="xs"
-                                      />
-                                      <span className="font-bold text-slate-700 dark:text-slate-300">
-                                        {payerMember?.displayName || expense.createdByName}
-                                      </span>
-                                      {expense.paidBy === user.uid && (
-                                        <span className="text-teal-600 font-bold">(You)</span>
-                                      )}
-                                    </div>
-
-                                    {/* Optional comment */}
-                                    {expense.comment && (
-                                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">
-                                        &quot;{expense.comment}&quot;
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Right amount & edit/delete buttons */}
-                                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                                  <span className="text-base font-black text-slate-900 dark:text-white">
-                                    {formatCurrency(expense.costMinor, currency)}
-                                  </span>
-
-                                  <div className="flex items-center gap-1">
+                            return (
+                              <div
+                                key={expense.id}
+                                className={`p-3.5 rounded-2xl border transition-all ${
+                                  isSelected
+                                    ? 'border-teal-500/50 bg-teal-50/40 dark:bg-teal-950/20'
+                                    : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#15263C]'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
                                     <button
                                       type="button"
-                                      onClick={() => handleToggleAuditLog(expense.id)}
-                                      className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
-                                        isAuditOpen
-                                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white'
-                                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                      }`}
-                                      title="View Modification History"
+                                      onClick={() => handleToggleSelectExpense(expense.id)}
+                                      className="text-slate-400 hover:text-teal-600 transition-colors"
                                     >
-                                      <History className="w-3.5 h-3.5" />
-                                      <span className="text-[10px]">Audit</span>
+                                      {isSelected ? (
+                                        <CheckSquare className="w-4 h-4 text-teal-500" />
+                                      ) : (
+                                        <Square className="w-4 h-4" />
+                                      )}
                                     </button>
+
+                                    <span className="text-xl flex-shrink-0">{expense.emoji}</span>
+
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                        {expense.name}
+                                      </h4>
+                                      <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400 flex-wrap">
+                                        <span>
+                                          Paid by{' '}
+                                          <strong className="text-slate-700 dark:text-slate-200">
+                                            {payer?.displayName || expense.createdByName || 'Unknown'}
+                                          </strong>
+                                        </span>
+                                        <span>•</span>
+                                        <span>
+                                          Split ({expense.participants.length} members)
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-3 flex-shrink-0">
+                                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                                      {formatCurrency(expense.costMinor, currency)}
+                                    </span>
 
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setActiveTargetItemId(item.id);
                                         setEditingExpense(expense);
+                                        setEditingItem(null);
+                                        setTargetCategoryItemId(item.id);
                                         setIsExpenseModalOpen(true);
                                       }}
-                                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      title="Edit Expense"
+                                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                                      title="Edit Subitem"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
                                     </button>
@@ -904,179 +928,331 @@ export const EventDetailsPage: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => handleDeleteSingleExpense(expense)}
-                                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                      title="Delete Expense"
+                                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
+                                      title="Delete Subitem"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
-                                  </div>
-                                </div>
-                              </div>
 
-                              {/* Exact Audit Log displayed under subitem only */}
-                              {isAuditOpen && (
-                                <div className="mt-3 p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs font-mono space-y-1.5">
-                                  <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800 font-sans font-bold text-slate-600 dark:text-slate-400 text-[11px]">
-                                    <span>Audit & Modification History</span>
-                                    <span>
-                                      {expense.auditLogs?.length || 1} record(s)
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleAuditLog(expense.id)}
+                                      className="p-1.5 text-slate-400 hover:text-teal-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                                      title="Audit history"
+                                    >
+                                      <History className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
-                                  {expense.auditLogs && expense.auditLogs.length > 0 ? (
-                                    expense.auditLogs.map((log) => (
-                                      <div
-                                        key={log.id}
-                                        className="text-slate-700 dark:text-slate-300 text-[11px]"
-                                      >
-                                        {log.type === 'created' ? (
-                                          <span>
-                                            Created by {log.byName} at {log.formattedTimestamp}
-                                          </span>
-                                        ) : log.type === 'edited' ? (
-                                          <span>
-                                            Edited by {log.byName} at {log.formattedTimestamp}
-                                            {log.changedFields && log.changedFields.length > 0 && (
-                                              <span className="text-slate-500 ml-1">
-                                                (modified: {log.changedFields.join(', ')})
-                                              </span>
-                                            )}
-                                          </span>
-                                        ) : (
-                                          <span>
-                                            Deleted by {log.byName} at {log.formattedTimestamp}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className="text-slate-700 dark:text-slate-300 text-[11px]">
-                                      Created by {expense.createdByName} at{' '}
-                                      {new Date(expense.createdAt).toLocaleDateString()}
-                                    </div>
-                                  )}
                                 </div>
-                              )}
+
+                                {/* Audit Logs view */}
+                                {isAuditExpanded && expense.auditLogs && (
+                                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 space-y-1">
+                                    <span className="font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                                      Audit Trail:
+                                    </span>
+                                    {expense.auditLogs.map((log) => (
+                                      <div key={log.id} className="flex items-center gap-2">
+                                        <span className="text-slate-400 font-mono">
+                                          {log.formattedTimestamp}
+                                        </span>
+                                        <span>— {log.summary}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // ----------------------------------------------------
+              // B. SETTLEMENTS ITEM (Special ledger view)
+              // ----------------------------------------------------
+              if (isSettlement) {
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white dark:bg-[#15263C] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden"
+                  >
+                    <div className="p-4 sm:p-5 flex items-center justify-between gap-3 bg-amber-500/5 dark:bg-amber-950/20 border-b border-amber-500/10">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl flex-shrink-0">💸</span>
+                        <div>
+                          <h3 className="text-base sm:text-lg font-black text-[#203D62] dark:text-white">
+                            Settlements Ledger
+                          </h3>
+                          <span className="text-[11px] text-slate-400">
+                            {settlements.filter((s) => s.status === 'completed').length} completed payments
+                          </span>
+                        </div>
+                      </div>
+
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setActiveSuggestion(null);
+                          setIsSettlementModalOpen(true);
+                        }}
+                      >
+                        Record Settlement
+                      </Button>
+                    </div>
+
+                    <div className="p-4 space-y-2">
+                      {settlements.length === 0 ? (
+                        <div className="text-center py-4 text-xs text-slate-400">
+                          No settlements recorded yet.
+                        </div>
+                      ) : (
+                        settlements.map((s) => {
+                          const fromName = s.payerName || event.members[s.payerUid]?.displayName || s.payerUid;
+                          const toName = s.receiverName || event.members[s.receiverUid]?.displayName || s.receiverUid;
+                          return (
+                            <div
+                              key={s.id}
+                              className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
+                            >
+                              <div className="flex items-center gap-2">
+                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                <span>
+                                  <strong className="text-slate-800 dark:text-white font-bold">
+                                    {fromName}
+                                  </strong>{' '}
+                                  paid{' '}
+                                  <strong className="text-slate-800 dark:text-white font-bold">
+                                    {toName}
+                                  </strong>
+                                </span>
+                              </div>
+                              <span className="font-extrabold text-slate-900 dark:text-white">
+                                {formatCurrency(s.amountMinor, currency)}
+                              </span>
                             </div>
                           );
                         })
                       )}
                     </div>
+                  </div>
+                );
+              }
+
+              // ----------------------------------------------------
+              // C. STANDALONE ITEM (Item-First Direct Expense)
+              // ----------------------------------------------------
+              const payer = item.paidBy ? event.members[item.paidBy] : null;
+              const isAuditExpanded = Boolean(expandedAuditLogs[item.id]);
+
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white dark:bg-[#15263C] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-4 sm:p-5 transition-all hover:border-teal-500/40"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    {/* Left: Emoji, Name, Payer, Participants */}
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <span className="text-3xl flex-shrink-0 mt-0.5">{item.emoji}</span>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base sm:text-lg font-black text-[#203D62] dark:text-white truncate">
+                            {item.name}
+                          </h3>
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                            Direct Expense
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-1 text-xs text-slate-400 flex-wrap">
+                          <span>
+                            Paid by{' '}
+                            <strong className="text-slate-700 dark:text-slate-200 font-bold">
+                              {payer?.displayName || item.createdByName || 'Unknown'}
+                            </strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Split ({item.participants?.length || Object.keys(item.shares || {}).length} participants)
+                          </span>
+                          {item.comment && (
+                            <>
+                              <span>•</span>
+                              <span className="italic text-slate-500 truncate max-w-xs">
+                                "{item.comment}"
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Amount & Actions */}
+                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                      <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+                        {formatCurrency(item.costMinor || 0, currency)}
+                      </span>
+
+                      {/* Convert to category button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleConvertToCategory(item.id)}
+                        title="Convert to Category so you can add subitems under this expense"
+                        className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 mr-1" />
+                        Add Subitems
+                      </Button>
+
+                      {/* Edit Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingItem(item);
+                          setEditingExpense(null);
+                          setTargetCategoryItemId(null);
+                          setIsExpenseModalOpen(true);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                        title="Edit Expense"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+
+                      {/* Delete Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item)}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
+                        title="Delete Expense"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+
+                      {/* Audit History Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAuditLog(item.id)}
+                        className="p-1.5 text-slate-400 hover:text-teal-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                        title="Audit trail"
+                      >
+                        <History className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Audit Trail Expanded */}
+                  {isAuditExpanded && item.auditLogs && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 space-y-1">
+                      <span className="font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                        Audit Trail:
+                      </span>
+                      {item.auditLogs.map((log) => (
+                        <div key={log.id} className="flex items-center gap-2">
+                          <span className="text-slate-400 font-mono">
+                            {log.formattedTimestamp}
+                          </span>
+                          <span>— {log.summary}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               );
             })}
-
-            {/* System-Generated Settlements Item Display */}
-            {settlements.length > 0 && (
-              <div className="bg-white dark:bg-[#15263C] rounded-3xl border-2 border-teal-500/40 shadow-sm overflow-hidden">
-                <div className="p-4 sm:p-5 flex items-center justify-between gap-3 bg-teal-50/50 dark:bg-teal-950/20 border-b border-teal-100 dark:border-teal-900/30">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl select-none">💸</span>
-                    <div>
-                      <h3 className="text-base sm:text-lg font-black text-teal-800 dark:text-teal-300">
-                        💸 Settlements
-                      </h3>
-                      <span className="text-[10px] font-bold text-teal-600 dark:text-teal-400">
-                        System-generated financial settlement ledger (does not affect Total Expense)
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-xs font-black bg-teal-500 text-white px-2.5 py-1 rounded-full">
-                    {settlements.length} settled
-                  </span>
-                </div>
-
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 p-1">
-                  {settlements.map((set) => (
-                    <div
-                      key={set.id}
-                      className="p-3.5 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                        <div>
-                          <p className="font-extrabold text-slate-800 dark:text-white">
-                            {set.payerName} paid {set.receiverName}{' '}
-                            <span className="text-teal-600 dark:text-teal-400 font-black">
-                              {formatCurrency(set.amountMinor, currency)}
-                            </span>
-                          </p>
-                          <p className="text-[10px] text-slate-400 font-mono">
-                            Recorded by {set.recordedByName} at {set.formattedTimestamp}
-                            {set.note ? ` • "${set.note}"` : ''}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">
-                        Completed
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
 
       {/* ==================================================== */}
-      {/* TAB 2: FINANCIAL DASHBOARD & SETTLEMENTS */}
+      {/* TAB 2: BALANCES & SETTLEMENTS */}
       {/* ==================================================== */}
       {activeTab === 'dashboard' && financialOverview && (
         <div className="space-y-6">
-          {/* Section: Who pays whom? (Settlement Suggestions) */}
-          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <span>💸</span> Suggested Settlements (Who pays whom?)
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Deterministic minimum cash flow calculations to settle all debts with the fewest transactions.
-            </p>
+          {/* Debt Simplification Suggestions */}
+          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>🤝</span> Optimal Settlement Suggestions
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Minimal transactions calculated automatically to settle all debts.
+                </p>
+              </div>
+
+              {financialOverview.isBalanced && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-teal-500/15 text-teal-600 dark:text-teal-400">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Zero-Sum Balanced
+                </span>
+              )}
+            </div>
 
             {financialOverview.settlementSuggestions.length === 0 ? (
-              <div className="text-center py-10 px-4 mt-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300">
-                <span className="text-3xl">🎉</span>
-                <p className="font-extrabold text-sm mt-1">All balances are completely settled!</p>
-                <p className="text-xs opacity-80">Nobody owes money in this event.</p>
+              <div className="text-center py-8 text-xs font-bold text-teal-600 dark:text-teal-400">
+                🎉 All event expenses are completely settled! No outstanding payments.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-4">
+              <div className="space-y-2.5">
                 {financialOverview.settlementSuggestions.map((sug, idx) => {
-                  const isUserDebtor = sug.fromUid === user.uid;
-                  const isUserCreditor = sug.toUid === user.uid;
+                  const fromMember = event.members[sug.fromUid];
+                  const toMember = event.members[sug.toUid];
+                  const isUserInvolved = sug.fromUid === user.uid || sug.toUid === user.uid;
 
                   return (
                     <div
                       key={idx}
-                      className={`p-4 rounded-2xl border transition-all ${
-                        isUserDebtor
-                          ? 'border-rose-200 dark:border-rose-800/60 bg-rose-50/40 dark:bg-rose-950/20'
-                          : isUserCreditor
-                          ? 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-950/20'
-                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50'
+                      className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isUserInvolved
+                          ? 'border-teal-500/40 bg-teal-50/20 dark:bg-teal-950/15'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Avatar name={sug.fromName} size="xs" />
-                          <span className="text-xs font-black text-slate-900 dark:text-white truncate">
-                            {sug.fromName} {isUserDebtor ? '(You)' : ''}
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={fromMember?.photoURL}
+                          name={fromMember?.displayName || sug.fromUid}
+                          size="sm"
+                        />
+                        <div className="text-xs">
+                          <span className="font-extrabold text-slate-800 dark:text-white">
+                            {fromMember?.displayName || sug.fromUid}{' '}
+                            {sug.fromUid === user.uid ? '(You)' : ''}
                           </span>
-                          <span className="text-xs text-slate-400 font-bold">owes</span>
-                          <Avatar name={sug.toName} size="xs" />
-                          <span className="text-xs font-black text-slate-900 dark:text-white truncate">
-                            {sug.toName} {isUserCreditor ? '(You)' : ''}
-                          </span>
+                          <span className="text-slate-400 mx-1">owes</span>
+                          <strong className="text-slate-800 dark:text-white font-extrabold">
+                            {toMember?.displayName || sug.toUid}{' '}
+                            {sug.toUid === user.uid ? '(You)' : ''}
+                          </strong>
                         </div>
-                        <span className="text-sm font-black text-slate-900 dark:text-white">
-                          {formatCurrency(sug.amountMinor, currency)}
-                        </span>
                       </div>
 
-                      {/* Action buttons: Settled! and Remind */}
-                      <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
-                        {/* Remind button: only for creditor */}
-                        {isUserCreditor && (
+                      <div className="flex items-center justify-between sm:justify-end gap-3">
+                        <span className="text-base font-black text-slate-900 dark:text-white">
+                          {formatCurrency(sug.amountMinor, currency)}
+                        </span>
+
+                        {sug.fromUid === user.uid && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              setActiveSuggestion(sug);
+                              setIsSettlementModalOpen(true);
+                            }}
+                          >
+                            Settle Now
+                          </Button>
+                        )}
+
+                        {sug.toUid === user.uid && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -1086,18 +1262,6 @@ export const EventDetailsPage: React.FC = () => {
                             Send Reminder
                           </Button>
                         )}
-
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            setActiveSuggestion(sug);
-                            setIsSettlementModalOpen(true);
-                          }}
-                          className="!bg-teal-500 hover:!bg-teal-600 shadow-sm"
-                        >
-                          Settled! 💸
-                        </Button>
                       </div>
                     </div>
                   );
@@ -1106,143 +1270,174 @@ export const EventDetailsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Section: Individual Spending Table */}
-          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+          {/* Member Ledger Breakdown */}
+          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
             <h3 className="text-lg font-black text-slate-900 dark:text-white mb-4">
-              Individual Member Spending & Balances
+              👥 Individual Member Totals
             </h3>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px] font-extrabold">
-                    <th className="pb-3">Member</th>
-                    <th className="pb-3 text-right">Total Spent</th>
-                    <th className="pb-3 text-right">Fair Share</th>
-                    <th className="pb-3 text-right">Net Position</th>
-                    <th className="pb-3 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold">
-                  {Object.values(financialOverview.memberSummaries).map((memberSummary) => {
-                    const isPositive = memberSummary.netBalanceMinor > 0;
-                    const isNegative = memberSummary.netBalanceMinor < 0;
-
-                    return (
-                      <tr key={memberSummary.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                        <td className="py-3">
-                          <div className="flex items-center gap-2">
-                            <Avatar
-                              src={memberSummary.photoURL}
-                              name={memberSummary.displayName}
-                              size="xs"
-                            />
-                            <span className="font-extrabold text-slate-800 dark:text-white">
-                              {memberSummary.displayName}{' '}
-                              {memberSummary.uid === user.uid ? '(You)' : ''}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-3 text-right font-bold text-slate-700 dark:text-slate-300">
-                          {formatCurrency(memberSummary.spentMinor, currency)}
-                        </td>
-                        <td className="py-3 text-right font-bold text-slate-700 dark:text-slate-300">
-                          {formatCurrency(memberSummary.shareMinor, currency)}
-                        </td>
-                        <td className="py-3 text-right">
-                          <span
-                            className={`font-black ${
-                              isPositive
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : isNegative
-                                ? 'text-rose-600 dark:text-rose-400'
-                                : 'text-slate-500'
-                            }`}
-                          >
-                            {formatCurrency(memberSummary.netBalanceMinor, currency, {
-                              includeSign: true,
-                            })}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {Object.entries(financialOverview.memberSummaries).map(([uid, summary]) => {
+                const member = event.members[uid];
+                return (
+                  <div
+                    key={uid}
+                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar
+                          src={member?.photoURL}
+                          name={member?.displayName || summary.displayName}
+                          size="sm"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 dark:text-white block">
+                            {member?.displayName || summary.displayName}{' '}
+                            {uid === user.uid ? '(You)' : ''}
                           </span>
-                        </td>
-                        <td className="py-3 text-center">
-                          {isPositive ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
-                              Receives
-                            </span>
-                          ) : isNegative ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300">
-                              Owes
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                              Settled
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <span className="text-[10px] text-slate-400 capitalize">
+                            {member?.role || 'Member'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                          summary.netBalanceMinor > 0
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : summary.netBalanceMinor < 0
+                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                        }`}
+                      >
+                        {summary.netBalanceMinor > 0
+                          ? `+${formatCurrency(summary.netBalanceMinor, currency)} (gets)`
+                          : summary.netBalanceMinor < 0
+                          ? `-${formatCurrency(Math.abs(summary.netBalanceMinor), currency)} (owes)`
+                          : 'Settled'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Paid:</span>
+                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                          {formatCurrency(summary.spentMinor, currency)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Fair Share:</span>
+                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                          {formatCurrency(summary.shareMinor, currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
       )}
 
       {/* ==================================================== */}
-      {/* TAB 3: MEMBERS */}
+      {/* TAB 3: MEMBERS & SLOTS */}
       {/* ==================================================== */}
       {activeTab === 'members' && (
-        <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 space-y-4">
+        <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white">
-              Event Members ({Object.keys(event.members).length})
-            </h3>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setIsInviteModalOpen(true)}
-              leftIcon={<Share2 className="w-3.5 h-3.5" />}
-            >
-              Invite Friends
-            </Button>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                Event Members ({Object.keys(event.members).length})
+              </h3>
+              <p className="text-xs text-slate-400">
+                All friends who have joined this event.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSlotsModalOpen(true)}
+              >
+                <Layers className="w-3.5 h-3.5 mr-1 text-amber-500" />
+                Manage Slots
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsShareModalOpen(true)}
+              >
+                <Share2 className="w-3.5 h-3.5 mr-1" />
+                Invite Friends
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {Object.values(event.members).map((m) => (
-              <div
-                key={m.uid}
-                className="p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center gap-3"
-              >
-                <Avatar src={m.photoURL} name={m.displayName} size="md" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                    {m.displayName} {m.uid === user.uid ? '(You)' : ''}
-                  </p>
-                  <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold truncate">
-                    @{m.username || 'member'}
-                  </p>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    {m.role === 'host' ? '👑 Host' : 'Member'}
-                  </span>
+            {Object.values(event.members).map((member) => {
+              const assignedSlot = member.slotId && event.slots ? event.slots[member.slotId] : null;
+
+              return (
+                <div
+                  key={member.uid}
+                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar src={member.photoURL} name={member.displayName} size="sm" />
+                    <div className="min-w-0">
+                      <span className="text-xs font-extrabold text-slate-800 dark:text-white truncate block">
+                        {member.displayName} {member.uid === user.uid ? '(You)' : ''}
+                      </span>
+                      <span className="text-[10px] text-teal-600 dark:text-teal-400 capitalize font-semibold">
+                        {member.role}
+                      </span>
+                      {assignedSlot && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold">
+                          Slot: {assignedSlot.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Modals */}
+      {/* ==================================================== */}
+      {/* MODALS */}
+      {/* ==================================================== */}
+
+      {/* Expense Modal (Add/Edit) */}
       <ExpenseModal
         isOpen={isExpenseModalOpen}
-        onClose={() => setIsExpenseModalOpen(false)}
+        onClose={() => {
+          setIsExpenseModalOpen(false);
+          setEditingItem(null);
+          setEditingExpense(null);
+          setTargetCategoryItemId(null);
+        }}
         event={event}
-        itemId={activeTargetItemId}
         currentUser={user}
         initialExpense={editingExpense}
+        initialItem={editingItem}
+        title={
+          editingItem
+            ? 'Edit Expense Item'
+            : editingExpense
+            ? 'Edit Subitem'
+            : targetCategoryItemId
+            ? 'Add Subitem to Category'
+            : 'Add Expense Item'
+        }
         onSave={handleSaveExpense}
       />
 
+      {/* Settlement Modal */}
       <SettlementModal
         isOpen={isSettlementModalOpen}
         onClose={() => setIsSettlementModalOpen(false)}
@@ -1252,22 +1447,95 @@ export const EventDetailsPage: React.FC = () => {
         onConfirm={handleRecordSettlement}
       />
 
+      {/* Bulk Delete Modal */}
       <BulkDeleteModal
         isOpen={isBulkDeleteModalOpen}
         onClose={() => setIsBulkDeleteModalOpen(false)}
         selectedCount={selectedExpenses.length}
         totalAffectedAmountMinor={selectedTotalMinor}
         currency={currency}
-        onConfirm={handleConfirmBulkDelete}
         isLoading={isBulkDeleting}
+        onConfirm={handleConfirmBulkDelete}
       />
 
-      <InviteFriendModal
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
+      {/* Share / Invite Modal */}
+      <ShareInviteModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
         event={event}
-        currentUser={user}
+        items={items}
       />
+
+      {/* Slots Modal */}
+      <SlotsModal
+        isOpen={isSlotsModalOpen}
+        onClose={() => setIsSlotsModalOpen(false)}
+        event={event}
+      />
+
+      {/* Delete Event Confirmation Modal (Host) */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="Delete Event"
+        emoji="⚠️"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            Are you sure you want to delete <strong className="font-bold">{event.name}</strong>?
+            This will archive the event for all members. This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <Button variant="ghost" size="sm" onClick={() => setIsDeleteModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleConfirmDeleteEvent}>
+              Delete Event
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Leave Event Confirmation Modal (Member) */}
+      <Modal
+        isOpen={isLeaveModalOpen}
+        onClose={() => setIsLeaveModalOpen(false)}
+        title="Leave Event"
+        emoji="🚪"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          {financialOverview && financialOverview.currentUserNetBalanceMinor !== 0 && (
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-500 mt-0.5" />
+              <div>
+                <strong className="font-bold">Outstanding Balance Warning:</strong>
+                <p className="mt-0.5">
+                  You currently have a balance of{' '}
+                  {formatCurrency(Math.abs(financialOverview.currentUserNetBalanceMinor), currency)} (
+                  {financialOverview.currentUserNetBalanceMinor > 0 ? 'owed to you' : 'you owe'}).
+                  Please settle before leaving if possible.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            Are you sure you want to leave <strong className="font-bold">{event.name}</strong>? Your
+            historical expense entries will remain in the event calculations.
+          </p>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <Button variant="ghost" size="sm" onClick={() => setIsLeaveModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleConfirmLeaveEvent}>
+              Leave Event
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
