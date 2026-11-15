@@ -712,7 +712,8 @@ export const dataService = {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const updated = applyUpdates({ ...snap.data(), id: snap.id } as EventItem);
-        await updateDoc(ref, sanitizeForFirestore({ ...updated }));
+        const { id, ...docData } = updated;
+        await updateDoc(ref, sanitizeForFirestore(docData));
       }
     }
 
@@ -1138,7 +1139,8 @@ export const dataService = {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const updated = applyUpdatesToEntry({ ...snap.data(), id: snap.id } as ExpenseEntry);
-        await updateDoc(ref, sanitizeForFirestore({ ...updated }));
+        const { id, ...docData } = updated;
+        await updateDoc(ref, sanitizeForFirestore(docData));
       }
     }
 

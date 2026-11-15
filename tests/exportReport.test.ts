@@ -99,4 +99,73 @@ describe('generatePlainTextExpenseReport', () => {
     expect(report).toContain('• Rahul: Paid ₹2,000 | Share: ₹1,500 | Balance: +₹500 (gets back)');
     expect(report).toContain('👉 Krishnendu pays Rahul ₹500');
   });
+
+  it('resolves unclaimed expected slots and displays first names without leaking slot IDs', () => {
+    const slotId = 'slot_1794760088877_0_27yh';
+    const eventWithSlot: SplitifyEvent = {
+      ...mockEvent,
+      members: {
+        u1: { uid: 'u1', displayName: 'Krishnendu Pal', joinedAt: 1773000000000, role: 'host' },
+      },
+      slots: {
+        [slotId]: {
+          id: slotId,
+          eventId: 'evt-1',
+          placeholderName: 'Ayush',
+          isClaimed: false,
+          createdAt: 1773000000000,
+          updatedAt: 1773000000000,
+        },
+      },
+    };
+
+    const itemWithSlot: EventItem[] = [
+      {
+        id: 'item-curd',
+        eventId: 'evt-1',
+        name: 'curd',
+        emoji: '🥛',
+        costMinor: 2000, // ₹20.00
+        paidBy: 'u1',
+        splitBy: 'equal',
+        participants: ['u1', slotId],
+        shares: { u1: 1000, [slotId]: 1000 },
+        isCategory: false,
+        createdAt: 1773000000000,
+        updatedAt: 1773000000000,
+      },
+      {
+        id: 'item-demo',
+        eventId: 'evt-1',
+        name: 'demo',
+        emoji: '📌',
+        costMinor: 1900, // ₹19.00
+        paidBy: 'u1',
+        splitBy: 'equal',
+        participants: ['u1', slotId],
+        shares: { u1: 950, [slotId]: 950 },
+        isCategory: false,
+        createdAt: 1773000000000,
+        updatedAt: 1773000000000,
+      },
+    ];
+
+    const report = generatePlainTextExpenseReport(
+      eventWithSlot,
+      itemWithSlot,
+      [],
+      [],
+      'https://k-692.github.io/Splitify/events/BIhPznylXateTWGVcDI8',
+      new Date('2026-11-15T21:58:00Z')
+    );
+
+    // Verify slot ID is completely masked and replaced with Ayush (Pending)
+    expect(report).not.toContain('slot_1794760088877_0_27yh');
+    expect(report).toContain('Split with: [Krishnendu, Ayush (Pending)]');
+    expect(report).toContain('• Krishnendu: Paid ₹39 | Share: ₹19.50 | Balance: +₹19.50 (gets back)');
+    expect(report).toContain('• Ayush (Pending): Paid ₹0 | Share: ₹19.50 | Balance: -₹19.50 (owes)');
+    expect(report).toContain('👉 Ayush (Pending) pays Krishnendu ₹19.50');
+    // Verify first name Krishnendu is used instead of full name Krishnendu Pal
+    expect(report).not.toContain('Krishnendu Pal');
+  });
 });

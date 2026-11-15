@@ -1,6 +1,7 @@
 import { SplitifyEvent, EventItem, ExpenseEntry, SettlementEntry } from '@/types';
 import { formatCurrency } from './currency';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
+import { getFirstName } from './name';
 
 /**
  * Generates a clean, comprehensive plain-text expenses report.
@@ -8,6 +9,7 @@ import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
  * - Event Invitation Link / Website URL is placed FIRST at the very top.
  * - Followed by Date, Time, Event Name & Emoji.
  * - Categorized and standalone items with subitems, payers, and splits.
+ * - Full first-name resolution for joined members and expected slot placeholders.
  * - Completed settlements.
  * - Outstanding net balances / who owes whom.
  * - Total Event Expense.
@@ -21,6 +23,20 @@ export function generatePlainTextExpenseReport(
   now: Date = new Date()
 ): string {
   const lines: string[] = [];
+
+  // Helper to resolve first name from member or slot
+  const resolvePersonName = (id?: string): string => {
+    if (!id) return 'Unknown';
+    if (event.members && event.members[id]) {
+      return getFirstName(event.members[id].displayName);
+    }
+    if (event.slots && event.slots[id]) {
+      const slot = event.slots[id];
+      const slotName = getFirstName(slot.placeholderName || 'Guest');
+      return slot.isClaimed ? slotName : `${slotName} (Pending)`;
+    }
+    return id;
+  };
 
   // 1. EVENT LINK FIRST AT THE VERY TOP
   const origin = window?.location?.origin || 'https://k-692.github.io';
@@ -46,13 +62,14 @@ export function generatePlainTextExpenseReport(
   lines.push(`📅 Generated on: ${dateStr} at ${timeStr}`);
   lines.push('--------------------------------------------------');
 
-  // 3. Financial calculations
+  // 3. Financial calculations (with slots integrated)
   const overview = calculateEventFinancialOverview(
     event.members,
     expenses,
     settlements,
     undefined,
-    items
+    items,
+    event.slots
   );
 
   lines.push(`💰 Total Event Expense: ${formatCurrency(overview.totalExpenseMinor, event.currency)}`);
@@ -78,9 +95,9 @@ export function generatePlainTextExpenseReport(
           lines.push('    (No subitems)');
         } else {
           for (const sub of subitems) {
-            const payerName = event.members[sub.paidBy]?.displayName || sub.createdByName || 'Unknown';
+            const payerName = resolvePersonName(sub.paidBy) || sub.createdByName || 'Unknown';
             const participantNames = (sub.participants || [])
-              .map((uid) => event.members[uid]?.displayName || uid)
+              .map((uid) => resolvePersonName(uid))
               .join(', ');
             lines.push(
               `    • ${sub.emoji} ${sub.name}: ${formatCurrency(sub.costMinor, event.currency)} | Paid by: ${payerName} | Split with: [${participantNames}]`
@@ -90,9 +107,9 @@ export function generatePlainTextExpenseReport(
       } else {
         // Standalone Item (Item-first direct expense)
         const cost = item.costMinor || 0;
-        const payerName = (item.paidBy && event.members[item.paidBy]?.displayName) || item.createdByName || 'Unknown';
+        const payerName = resolvePersonName(item.paidBy) || item.createdByName || 'Unknown';
         const participantNames = (item.participants || [])
-          .map((uid) => event.members[uid]?.displayName || uid)
+          .map((uid) => resolvePersonName(uid))
           .join(', ');
 
         lines.push(
@@ -103,13 +120,14 @@ export function generatePlainTextExpenseReport(
     }
   }
 
-  // 5. Individual Member Totals
+  // 5. Individual Member Totals (including slots)
   lines.push('--------------------------------------------------');
   lines.push('👥 MEMBER TOTALS:');
-  for (const uid of Object.keys(event.members)) {
+  const allParticipantIds = Object.keys(overview.memberSummaries);
+  for (const uid of allParticipantIds) {
     const summary = overview.memberSummaries[uid];
-    const memberName = event.members[uid].displayName;
     if (summary) {
+      const memberName = resolvePersonName(uid);
       const balanceStr =
         summary.netBalanceMinor > 0
           ? `+${formatCurrency(summary.netBalanceMinor, event.currency)} (gets back)`
@@ -128,8 +146,8 @@ export function generatePlainTextExpenseReport(
   if (completedSettlements.length > 0) {
     lines.push('💸 RECORDED SETTLEMENTS:');
     for (const set of completedSettlements) {
-      const fromName = set.payerName || event.members[set.payerUid]?.displayName || 'Unknown';
-      const toName = set.receiverName || event.members[set.receiverUid]?.displayName || 'Unknown';
+      const fromName = set.payerName || resolvePersonName(set.payerUid) || 'Unknown';
+      const toName = set.receiverName || resolvePersonName(set.receiverUid) || 'Unknown';
       const noteStr = set.note ? ` (${set.note})` : '';
       lines.push(`  ✓ ${fromName} paid ${toName} ${formatCurrency(set.amountMinor, event.currency)}${noteStr}`);
     }
@@ -143,8 +161,8 @@ export function generatePlainTextExpenseReport(
     lines.push('  🎉 All expenses are fully settled! No pending debts.');
   } else {
     for (const debt of suggestions) {
-      const fromName = event.members[debt.fromUid]?.displayName || debt.fromUid;
-      const toName = event.members[debt.toUid]?.displayName || debt.toUid;
+      const fromName = resolvePersonName(debt.fromUid);
+      const toName = resolvePersonName(debt.toUid);
       lines.push(`  👉 ${fromName} pays ${toName} ${formatCurrency(debt.amountMinor, event.currency)}`);
     }
   }

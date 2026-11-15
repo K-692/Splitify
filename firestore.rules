@@ -117,6 +117,7 @@ rules_version = '2';
 // Subcollection: events/{eventId}/items
 // Document ID: {itemId}
 // Fields:
+//   - id: string (optional, <= 128 chars)
 //   - eventId: string (required, immutable) - Parent event ID
 //   - name: string (required, 1-100 chars) - Item or category name
 //   - emoji: string (required, <= 20 chars) - Category/item emoji
@@ -144,6 +145,7 @@ rules_version = '2';
 // Subcollection: events/{eventId}/expenses
 // Document ID: {expenseId}
 // Fields:
+//   - id: string (optional, <= 128 chars)
 //   - eventId: string (required, immutable) - Parent event ID
 //   - itemId: string (required, 1-128 chars) - Category/item ID
 //   - name: string (required, 1-100 chars) - Expense description
@@ -161,6 +163,7 @@ rules_version = '2';
 //   - lastModifiedBy: string (required, 1-128 chars) - Last modifier UID
 //   - lastModifiedByName: string (required, 1-100 chars) - Last modifier name
 //   - lastModifiedAt: number (required) - Timestamp
+//   - updatedAt: number (optional) - Timestamp
 //   - deleted: bool (optional) - Soft deletion flag
 //   - deletedAt: number (optional) - Soft deletion timestamp
 //   - deletedBy: string (optional, <= 128 chars) - UID who deleted
@@ -360,6 +363,7 @@ service cloud.firestore {
     function isValidEventItem(data, eventId) {
       return data.keys().hasAll(['eventId', 'name', 'emoji', 'createdAt', 'updatedAt']) &&
              data.keys().hasOnly([
+               'id',
                'eventId', 'name', 'emoji', 'createdAt', 'updatedAt',
                'isCategory', 'isSettlementsItem', 'deleted', 'deletedAt', 'deletedBy',
                'costMinor', 'paidBy', 'splitBy', 'participants', 'shares', 'comment',
@@ -372,6 +376,7 @@ service cloud.firestore {
              data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 20 &&
              data.createdAt is number &&
              data.updatedAt is number &&
+             (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
              (!('isCategory' in data) || data.isCategory is bool) &&
              (!('isSettlementsItem' in data) || data.isSettlementsItem is bool) &&
              (!('deleted' in data) || data.deleted is bool) &&
@@ -400,11 +405,12 @@ service cloud.firestore {
                'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt', 'auditLogs'
              ]) &&
              data.keys().hasOnly([
+               'id',
                'eventId', 'itemId', 'name', 'emoji', 'costMinor',
                'paidBy', 'splitBy', 'participants', 'shares', 'comment',
                'expenseDate',
                'createdBy', 'createdByName', 'createdAt',
-               'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt',
+               'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt', 'updatedAt',
                'deleted', 'deletedAt', 'deletedBy', 'auditLogs'
              ]) &&
              data.eventId == eventId &&
@@ -423,6 +429,8 @@ service cloud.firestore {
              data.lastModifiedByName is string && data.lastModifiedByName.size() >= 1 && data.lastModifiedByName.size() <= 100 &&
              data.lastModifiedAt is number &&
              data.auditLogs is list && data.auditLogs.size() <= 200 &&
+             (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             (!('updatedAt' in data) || data.updatedAt is number) &&
              (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
              (!('expenseDate' in data) || (data.expenseDate is string && data.expenseDate.size() <= 20)) &&
              (!('deleted' in data) || data.deleted is bool) &&
@@ -740,11 +748,7 @@ service cloud.firestore {
                          isValidExpense(request.resource.data, eventId);
 
         allow update: if isEventMember(eventId) &&
-                         (
-                           request.auth.uid == request.resource.data.lastModifiedBy ||
-                           (request.resource.data.deleted == true && request.auth.uid == request.resource.data.deletedBy)
-                         ) &&
-                         areImmutableFieldsUnchanged(['eventId', 'createdBy', 'createdAt']) &&
+                         areImmutableFieldsUnchanged(['eventId', 'createdAt']) &&
                          isValidExpense(request.resource.data, eventId);
 
         allow delete: if isEventMember(eventId);
