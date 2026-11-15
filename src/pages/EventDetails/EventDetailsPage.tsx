@@ -13,6 +13,8 @@ import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
+import { getFirstName } from '@/utils/name';
+import { formatDisplayExpenseDate } from '@/utils/date';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -36,7 +38,6 @@ import {
   FolderPlus,
   Share2,
   Copy,
-  Layers,
   LogOut,
   AlertTriangle,
 } from 'lucide-react';
@@ -223,15 +224,14 @@ export const EventDetailsPage: React.FC = () => {
   const handleCopyExpenses = async () => {
     if (!event) return;
     try {
-      const appBaseUrl = window?.location?.origin
-        ? `${window.location.origin}${window.location.pathname}`
-        : 'https://k-692.github.io/Splitify/';
+      const origin = window?.location?.origin || 'https://k-692.github.io';
+      const cleanEventUrl = `${origin}/Splitify/events/${event.id}`;
       const report = generatePlainTextExpenseReport(
         event,
         items,
         expenses,
         settlements,
-        `${appBaseUrl}#/events/${event.id}`
+        cleanEventUrl
       );
 
       await navigator.clipboard.writeText(report);
@@ -330,6 +330,32 @@ export const EventDetailsPage: React.FC = () => {
     setEditingItem(null);
     setEditingExpense(null);
     setTargetCategoryItemId(null);
+  };
+
+  const handleSaveCategoryWithSubitems = async (
+    categoryName: string,
+    subitems: any[]
+  ) => {
+    if (!event || !user) return;
+    try {
+      const categoryId = await dataService.createItem(event.id, categoryName);
+      await dataService.convertItemToCategory(event.id, categoryId, user);
+      for (const sub of subitems) {
+        await dataService.createExpense(
+          {
+            ...sub,
+            eventId: event.id,
+            itemId: categoryId,
+          },
+          user,
+          event.members
+        );
+      }
+      showToast(`Created category "${categoryName}" with ${subitems.length} subitem(s)`);
+      setIsExpenseModalOpen(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to create category and subitems');
+    }
   };
 
   const handleToggleSelectAllEvent = () => {
@@ -483,8 +509,8 @@ export const EventDetailsPage: React.FC = () => {
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
-                  <Layers className="w-3.5 h-3.5 text-amber-500" />
-                  {slotsCount} {slotsCount === 1 ? 'slot' : 'slots'}
+                  <Users className="w-3.5 h-3.5 text-amber-500" />
+                  {slotsCount} {slotsCount === 1 ? 'person' : 'people'}
                 </span>
                 <span>•</span>
                 <span>Currency: {currency}</span>
@@ -492,9 +518,25 @@ export const EventDetailsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Copy Expenses Button */}
+          {/* Action Buttons: Prominent Add Expense FIRST, then secondary actions at the end */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Primary Add Expense Button */}
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                setTargetCategoryItemId(null);
+                setEditingExpense(null);
+                setEditingItem(null);
+                setIsExpenseModalOpen(true);
+              }}
+              className="shadow-md shadow-teal-500/20 px-4 font-bold"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              <span>Add Expense</span>
+            </Button>
+
+            {/* Secondary Actions */}
             <Button
               variant="outline"
               size="sm"
@@ -503,10 +545,9 @@ export const EventDetailsPage: React.FC = () => {
               className="text-teal-700 dark:text-teal-300 font-bold"
             >
               <Copy className="w-3.5 h-3.5 mr-1 text-teal-500" />
-              Copy Expenses
+              <span>Copy Expenses</span>
             </Button>
 
-            {/* Share / Invite Button */}
             <Button
               variant="outline"
               size="sm"
@@ -514,55 +555,42 @@ export const EventDetailsPage: React.FC = () => {
               className="font-bold"
             >
               <Share2 className="w-3.5 h-3.5 mr-1 text-teal-500" />
-              Share / Invite
+              <span>Invite</span>
             </Button>
 
-            {/* Slots / Groups Button */}
             <Button
               variant="outline"
               size="sm"
               onClick={() => setIsSlotsModalOpen(true)}
               className="font-bold"
             >
-              <Layers className="w-3.5 h-3.5 mr-1 text-amber-500" />
-              Slots ({slotsCount})
+              <Users className="w-3.5 h-3.5 mr-1 text-amber-500" />
+              <span>People</span>
             </Button>
 
-            {/* Primary Add Expense Button */}
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setTargetCategoryItemId(null);
-                setEditingExpense(null);
-                setEditingItem(null);
-                setIsExpenseModalOpen(true);
-              }}
-              className="shadow-md shadow-teal-500/20"
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Add Expense
-            </Button>
-
-            {/* Event Management: Delete (Host) or Leave (Member) */}
+            {/* Event Management: Delete Event (Host) or Leave Event (Member) */}
             {isHost ? (
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setIsDeleteModalOpen(true)}
-                title="Delete Event (Host Only)"
-                className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                title="Delete Event"
+                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 border-rose-200 dark:border-rose-900 font-bold"
               >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-500" />
+                <span>Delete Event</span>
+              </Button>
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setIsLeaveModalOpen(true)}
                 title="Leave Event"
-                className="p-2 rounded-xl text-slate-400 hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20 border-amber-200 dark:border-amber-900 font-bold"
               >
-                <LogOut className="w-4 h-4" />
-              </button>
+                <LogOut className="w-3.5 h-3.5 mr-1 text-amber-500" />
+                <span>Leave Event</span>
+              </Button>
             )}
           </div>
         </div>
@@ -895,9 +923,15 @@ export const EventDetailsPage: React.FC = () => {
                                         <span>
                                           Paid by{' '}
                                           <strong className="text-slate-700 dark:text-slate-200">
-                                            {payer?.displayName || expense.createdByName || 'Unknown'}
+                                            {getFirstName(payer?.displayName || expense.createdByName || 'Unknown')}
                                           </strong>
                                         </span>
+                                        {expense.expenseDate && (
+                                          <>
+                                            <span>•</span>
+                                            <span>{formatDisplayExpenseDate(expense.expenseDate)}</span>
+                                          </>
+                                        )}
                                         <span>•</span>
                                         <span>
                                           Split ({expense.participants.length} members)
@@ -1012,8 +1046,8 @@ export const EventDetailsPage: React.FC = () => {
                         </div>
                       ) : (
                         settlements.map((s) => {
-                          const fromName = s.payerName || event.members[s.payerUid]?.displayName || s.payerUid;
-                          const toName = s.receiverName || event.members[s.receiverUid]?.displayName || s.receiverUid;
+                          const fromName = getFirstName(s.payerName || event.members[s.payerUid]?.displayName || s.payerUid);
+                          const toName = getFirstName(s.receiverName || event.members[s.receiverUid]?.displayName || s.receiverUid);
                           return (
                             <div
                               key={s.id}
@@ -1073,9 +1107,15 @@ export const EventDetailsPage: React.FC = () => {
                           <span>
                             Paid by{' '}
                             <strong className="text-slate-700 dark:text-slate-200 font-bold">
-                              {payer?.displayName || item.createdByName || 'Unknown'}
+                              {getFirstName(payer?.displayName || item.createdByName || 'Unknown')}
                             </strong>
                           </span>
+                          {item.expenseDate && (
+                            <>
+                              <span>•</span>
+                              <span>{formatDisplayExpenseDate(item.expenseDate)}</span>
+                            </>
+                          )}
                           <span>•</span>
                           <span>
                             Split ({item.participants?.length || Object.keys(item.shares || {}).length} participants)
@@ -1218,17 +1258,17 @@ export const EventDetailsPage: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <Avatar
                           src={fromMember?.photoURL}
-                          name={fromMember?.displayName || sug.fromUid}
+                          name={getFirstName(fromMember?.displayName || sug.fromUid)}
                           size="sm"
                         />
                         <div className="text-xs">
                           <span className="font-extrabold text-slate-800 dark:text-white">
-                            {fromMember?.displayName || sug.fromUid}{' '}
+                            {getFirstName(fromMember?.displayName || sug.fromUid)}{' '}
                             {sug.fromUid === user.uid ? '(You)' : ''}
                           </span>
                           <span className="text-slate-400 mx-1">owes</span>
                           <strong className="text-slate-800 dark:text-white font-extrabold">
-                            {toMember?.displayName || sug.toUid}{' '}
+                            {getFirstName(toMember?.displayName || sug.toUid)}{' '}
                             {sug.toUid === user.uid ? '(You)' : ''}
                           </strong>
                         </div>
@@ -1288,12 +1328,12 @@ export const EventDetailsPage: React.FC = () => {
                       <div className="flex items-center gap-2.5">
                         <Avatar
                           src={member?.photoURL}
-                          name={member?.displayName || summary.displayName}
+                          name={getFirstName(member?.displayName || summary.displayName)}
                           size="sm"
                         />
                         <div>
                           <span className="text-xs font-bold text-slate-800 dark:text-white block">
-                            {member?.displayName || summary.displayName}{' '}
+                            {getFirstName(member?.displayName || summary.displayName)}{' '}
                             {uid === user.uid ? '(You)' : ''}
                           </span>
                           <span className="text-[10px] text-slate-400 capitalize">
@@ -1362,8 +1402,8 @@ export const EventDetailsPage: React.FC = () => {
                 size="sm"
                 onClick={() => setIsSlotsModalOpen(true)}
               >
-                <Layers className="w-3.5 h-3.5 mr-1 text-amber-500" />
-                Manage Slots
+                <Users className="w-3.5 h-3.5 mr-1 text-amber-500" />
+                People
               </Button>
               <Button
                 variant="primary"
@@ -1371,7 +1411,7 @@ export const EventDetailsPage: React.FC = () => {
                 onClick={() => setIsShareModalOpen(true)}
               >
                 <Share2 className="w-3.5 h-3.5 mr-1" />
-                Invite Friends
+                Invite
               </Button>
             </div>
           </div>
@@ -1386,17 +1426,17 @@ export const EventDetailsPage: React.FC = () => {
                   className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Avatar src={member.photoURL} name={member.displayName} size="sm" />
+                    <Avatar src={member.photoURL} name={getFirstName(member.displayName)} size="sm" />
                     <div className="min-w-0">
                       <span className="text-xs font-extrabold text-slate-800 dark:text-white truncate block">
-                        {member.displayName} {member.uid === user.uid ? '(You)' : ''}
+                        {getFirstName(member.displayName)} {member.uid === user.uid ? '(You)' : ''}
                       </span>
                       <span className="text-[10px] text-teal-600 dark:text-teal-400 capitalize font-semibold">
                         {member.role}
                       </span>
                       {assignedSlot && (
                         <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold">
-                          Slot: {assignedSlot.name}
+                          Slot: {assignedSlot.placeholderName}
                         </span>
                       )}
                     </div>
@@ -1435,6 +1475,7 @@ export const EventDetailsPage: React.FC = () => {
             : 'Add Expense Item'
         }
         onSave={handleSaveExpense}
+        onSaveCategoryWithSubitems={handleSaveCategoryWithSubitems}
       />
 
       {/* Settlement Modal */}

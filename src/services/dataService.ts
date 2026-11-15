@@ -11,6 +11,7 @@ import {
   where,
   orderBy,
   writeBatch,
+  runTransaction,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase/config';
 import {
@@ -29,8 +30,10 @@ import {
   EventMember,
 } from '@/types';
 import { getEmojiForName } from '@/utils/emoji';
-import { formatAuditTimestamp } from '@/utils/date';
+import { formatAuditTimestamp, getTodayLocalDateString } from '@/utils/date';
 import { calculateEqualShares } from '@/domain/calculations/finance';
+import { sanitizeForFirestore } from '@/utils/firestoreSanitizer';
+import { getFirstName } from '@/utils/name';
 
 function generateInvitationToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -102,9 +105,27 @@ export const dataService = {
     name: string,
     host: UserProfile,
     currency: string = 'INR',
-    customEmoji?: string
+    customEmoji?: string,
+    initialPeople?: { name: string; expectedUid?: string }[]
   ): Promise<string> {
     const emoji = customEmoji || getEmojiForName(name);
+
+    const initialSlots: Record<string, EventSlot> = {};
+    if (initialPeople && initialPeople.length > 0) {
+      initialPeople.forEach((p, idx) => {
+        if (!p.name?.trim()) return;
+        const slotId = 'slot_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6);
+        initialSlots[slotId] = {
+          id: slotId,
+          eventId: '',
+          placeholderName: p.name.trim(),
+          expectedUid: p.expectedUid,
+          isClaimed: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      });
+    }
 
     const newEvent: Omit<SplitifyEvent, 'id'> = {
       name,
@@ -125,7 +146,7 @@ export const dataService = {
           scope: 'full',
         },
       },
-      slots: {},
+      slots: initialSlots,
     };
 
     if (!isFirebaseConfigured() || !db) {
@@ -136,7 +157,8 @@ export const dataService = {
       return id;
     }
 
-    const ref = await addDoc(collection(db, 'events'), newEvent);
+    const sanitized = sanitizeForFirestore(newEvent);
+    const ref = await addDoc(collection(db, 'events'), sanitized);
     return ref.id;
   },
 
@@ -256,7 +278,12 @@ export const dataService = {
         delete ev.members[user.uid];
         if (ev.slots) {
           for (const slot of Object.values(ev.slots)) {
-            slot.assignedMemberUids = slot.assignedMemberUids.filter((uid) => uid !== user.uid);
+            if (slot.claimedByUid === user.uid) {
+              slot.isClaimed = false;
+              delete slot.claimedByUid;
+              delete slot.claimedByName;
+              delete slot.claimedAt;
+            }
           }
         }
         ev.updatedAt = Date.now();
@@ -278,17 +305,24 @@ export const dataService = {
 
     const updatedSlots = { ...(ev.slots || {}) };
     for (const slotId of Object.keys(updatedSlots)) {
-      updatedSlots[slotId] = {
-        ...updatedSlots[slotId],
-        assignedMemberUids: (updatedSlots[slotId].assignedMemberUids || []).filter((uid) => uid !== user.uid),
-      };
+      if (updatedSlots[slotId].claimedByUid === user.uid) {
+        updatedSlots[slotId] = {
+          ...updatedSlots[slotId],
+          isClaimed: false,
+          claimedByUid: undefined,
+          claimedByName: undefined,
+          claimedAt: undefined,
+          updatedAt: Date.now(),
+        };
+      }
     }
 
-    await updateDoc(eventRef, {
+    const payload = sanitizeForFirestore({
       members: updatedMembers,
       slots: updatedSlots,
       updatedAt: Date.now(),
     });
+    await updateDoc(eventRef, payload);
   },
 
   // ==========================================
@@ -353,6 +387,7 @@ export const dataService = {
       participants: string[];
       customShares?: Record<string, number>;
       comment?: string;
+      expenseDate?: string;
     },
     user: UserProfile,
     eventMembers: Record<string, any>
@@ -366,11 +401,14 @@ export const dataService = {
 
     const now = Date.now();
     const formattedTimestamp = formatAuditTimestamp(now);
+    const authorFirstName = getFirstName(user.displayName);
+    const expenseDate = params.expenseDate || getTodayLocalDateString();
+
     const initialAuditLog = {
       id: 'log_' + now,
       type: 'created' as const,
       byUid: user.uid,
-      byName: user.displayName,
+      byName: authorFirstName,
       timestamp: now,
       formattedTimestamp,
       summary: `Created expense item "${name}" for ${(costMinor / 100).toFixed(2)}`,
@@ -387,13 +425,14 @@ export const dataService = {
       splitBy,
       participants,
       shares,
+      expenseDate,
       comment: comment || '',
       createdBy: user.uid,
-      createdByName: user.displayName,
+      createdByName: authorFirstName,
       createdAt: now,
       updatedAt: now,
       lastModifiedBy: user.uid,
-      lastModifiedByName: user.displayName,
+      lastModifiedByName: authorFirstName,
       lastModifiedAt: now,
       deleted: false,
       auditLogs: [initialAuditLog],
@@ -406,7 +445,8 @@ export const dataService = {
       items.push({ ...newItem, id: itemId });
       setLocal(`items_${eventId}`, items);
     } else {
-      const ref = await addDoc(collection(db, 'events', eventId, 'items'), newItem);
+      const sanitized = sanitizeForFirestore(newItem);
+      const ref = await addDoc(collection(db, 'events', eventId, 'items'), sanitized);
       itemId = ref.id;
     }
 
@@ -416,11 +456,12 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_created',
           senderUid: user.uid,
-          senderName: user.displayName,
+          senderName: authorFirstName,
           senderPhotoURL: user.photoURL,
           eventId,
-          title: 'New Expense Added',
-          description: `${user.displayName} added "${name}"`,
+          amountMinor: costMinor,
+          title: 'New Expense',
+          description: `${authorFirstName} added "${name}"`,
         });
       }
     }
@@ -560,12 +601,14 @@ export const dataService = {
       participants: string[];
       customShares?: Record<string, number>;
       comment?: string;
+      expenseDate?: string;
     }>,
     user: UserProfile,
     eventMembers: Record<string, any>
   ): Promise<void> {
     const now = Date.now();
     const formattedTimestamp = formatAuditTimestamp(now);
+    const authorFirstName = getFirstName(user.displayName);
 
     const applyUpdates = (current: EventItem): EventItem => {
       const name = updates.name !== undefined ? updates.name : current.name;
@@ -574,6 +617,7 @@ export const dataService = {
       const splitBy = updates.splitBy !== undefined ? updates.splitBy : (current.splitBy || 'equal');
       const participants = updates.participants !== undefined ? updates.participants : (current.participants || []);
       const comment = updates.comment !== undefined ? updates.comment : (current.comment || '');
+      const expenseDate = updates.expenseDate !== undefined ? updates.expenseDate : current.expenseDate;
 
       const shares =
         splitBy === 'equal'
@@ -581,21 +625,51 @@ export const dataService = {
           : (updates.customShares || current.shares || {});
 
       const changedFields: string[] = [];
-      if (updates.name && updates.name !== current.name) changedFields.push('name');
-      if (updates.costMinor !== undefined && updates.costMinor !== current.costMinor) changedFields.push('cost');
-      if (updates.paidBy && updates.paidBy !== current.paidBy) changedFields.push('payer');
-      if (updates.splitBy && updates.splitBy !== current.splitBy) changedFields.push('split mode');
-      if (updates.participants) changedFields.push('participants');
+      const previousValues: Record<string, any> = {};
+      const newValues: Record<string, any> = {};
+
+      if (updates.name && updates.name !== current.name) {
+        changedFields.push('name');
+        previousValues.name = current.name;
+        newValues.name = updates.name;
+      }
+      if (updates.costMinor !== undefined && updates.costMinor !== current.costMinor) {
+        changedFields.push('cost');
+        previousValues.costMinor = current.costMinor;
+        newValues.costMinor = updates.costMinor;
+      }
+      if (updates.paidBy && updates.paidBy !== current.paidBy) {
+        changedFields.push('payer');
+        previousValues.paidBy = current.paidBy;
+        newValues.paidBy = updates.paidBy;
+      }
+      if (updates.splitBy && updates.splitBy !== current.splitBy) {
+        changedFields.push('split mode');
+        previousValues.splitBy = current.splitBy;
+        newValues.splitBy = updates.splitBy;
+      }
+      if (updates.participants) {
+        changedFields.push('participants');
+        previousValues.participants = current.participants;
+        newValues.participants = updates.participants;
+      }
+      if (updates.expenseDate && updates.expenseDate !== current.expenseDate) {
+        changedFields.push('date');
+        previousValues.expenseDate = current.expenseDate;
+        newValues.expenseDate = updates.expenseDate;
+      }
 
       const auditLog = {
         id: 'log_' + now,
         type: 'edited' as const,
         byUid: user.uid,
-        byName: user.displayName,
+        byName: authorFirstName,
         timestamp: now,
         formattedTimestamp,
         changedFields,
-        summary: `Edited by ${user.displayName} at ${formattedTimestamp}`,
+        previousValues,
+        newValues,
+        summary: `Edited by ${authorFirstName} at ${formattedTimestamp}`,
       };
 
       return {
@@ -607,9 +681,10 @@ export const dataService = {
         splitBy,
         participants,
         shares,
+        expenseDate,
         comment,
         lastModifiedBy: user.uid,
-        lastModifiedByName: user.displayName,
+        lastModifiedByName: authorFirstName,
         lastModifiedAt: now,
         updatedAt: now,
         auditLogs: [...(current.auditLogs || []), auditLog],
@@ -628,7 +703,7 @@ export const dataService = {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const updated = applyUpdates({ ...snap.data(), id: snap.id } as EventItem);
-        await updateDoc(ref, { ...updated });
+        await updateDoc(ref, sanitizeForFirestore({ ...updated }));
       }
     }
 
@@ -638,11 +713,11 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_modified',
           senderUid: user.uid,
-          senderName: user.displayName,
+          senderName: authorFirstName,
           senderPhotoURL: user.photoURL,
           eventId,
           title: 'Expense Modified',
-          description: `${user.displayName} modified an expense`,
+          description: `${authorFirstName} modified an expense`,
         });
       }
     }
@@ -808,6 +883,7 @@ export const dataService = {
       participants: string[];
       customShares?: Record<string, number>;
       comment?: string;
+      expenseDate?: string;
     },
     user: UserProfile,
     eventMembers: Record<string, any>
@@ -821,12 +897,14 @@ export const dataService = {
 
     const now = Date.now();
     const formattedTimestamp = formatAuditTimestamp(now);
+    const authorFirstName = getFirstName(user.displayName);
+    const expenseDate = params.expenseDate || getTodayLocalDateString();
 
     const initialAuditLog = {
       id: 'log_' + now,
       type: 'created' as const,
       byUid: user.uid,
-      byName: user.displayName,
+      byName: authorFirstName,
       timestamp: now,
       formattedTimestamp,
       summary: `Created expense ${name} for ${(costMinor / 100).toFixed(2)}`,
@@ -842,12 +920,13 @@ export const dataService = {
       splitBy,
       participants,
       shares,
+      expenseDate,
       comment: comment || '',
       createdBy: user.uid,
-      createdByName: user.displayName,
+      createdByName: authorFirstName,
       createdAt: now,
       lastModifiedBy: user.uid,
-      lastModifiedByName: user.displayName,
+      lastModifiedByName: authorFirstName,
       lastModifiedAt: now,
       deleted: false,
       auditLogs: [initialAuditLog],
@@ -861,7 +940,8 @@ export const dataService = {
       expenses.unshift({ ...newExpense, id: expenseId });
       setLocal(`expenses_${eventId}`, expenses);
     } else {
-      const ref = await addDoc(collection(db, 'events', eventId, 'expenses'), newExpense);
+      const sanitized = sanitizeForFirestore(newExpense);
+      const ref = await addDoc(collection(db, 'events', eventId, 'expenses'), sanitized);
       expenseId = ref.id;
     }
 
@@ -872,12 +952,12 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_created',
           senderUid: user.uid,
-          senderName: user.displayName,
+          senderName: authorFirstName,
           senderPhotoURL: user.photoURL,
           eventId,
           amountMinor: costMinor,
-          title: 'New Expense Added',
-          description: `${user.displayName} added "${name}"`,
+          title: 'New Expense',
+          description: `${authorFirstName} added "${name}"`,
         });
       }
     }
@@ -896,12 +976,14 @@ export const dataService = {
       participants?: string[];
       customShares?: Record<string, number>;
       comment?: string;
+      expenseDate?: string;
     },
     user: UserProfile,
     eventMembers: Record<string, any>
   ): Promise<void> {
     const now = Date.now();
     const formattedTimestamp = formatAuditTimestamp(now);
+    const authorFirstName = getFirstName(user.displayName);
 
     const applyUpdatesToEntry = (current: ExpenseEntry): ExpenseEntry => {
       const name = updates.name !== undefined ? updates.name : current.name;
@@ -910,27 +992,58 @@ export const dataService = {
       const splitBy = updates.splitBy !== undefined ? updates.splitBy : current.splitBy;
       const participants = updates.participants !== undefined ? updates.participants : current.participants;
       const comment = updates.comment !== undefined ? updates.comment : current.comment;
+      const expenseDate = updates.expenseDate !== undefined ? updates.expenseDate : current.expenseDate;
 
       const shares = splitBy === 'equal'
         ? calculateEqualShares(costMinor, participants)
         : (updates.customShares || current.shares);
 
       const changedFields: string[] = [];
-      if (updates.name && updates.name !== current.name) changedFields.push('name');
-      if (updates.costMinor && updates.costMinor !== current.costMinor) changedFields.push('cost');
-      if (updates.paidBy && updates.paidBy !== current.paidBy) changedFields.push('payer');
-      if (updates.splitBy && updates.splitBy !== current.splitBy) changedFields.push('split mode');
-      if (updates.participants) changedFields.push('participants');
+      const previousValues: Record<string, any> = {};
+      const newValues: Record<string, any> = {};
+
+      if (updates.name && updates.name !== current.name) {
+        changedFields.push('name');
+        previousValues.name = current.name;
+        newValues.name = updates.name;
+      }
+      if (updates.costMinor !== undefined && updates.costMinor !== current.costMinor) {
+        changedFields.push('cost');
+        previousValues.costMinor = current.costMinor;
+        newValues.costMinor = updates.costMinor;
+      }
+      if (updates.paidBy && updates.paidBy !== current.paidBy) {
+        changedFields.push('payer');
+        previousValues.paidBy = current.paidBy;
+        newValues.paidBy = updates.paidBy;
+      }
+      if (updates.splitBy && updates.splitBy !== current.splitBy) {
+        changedFields.push('split mode');
+        previousValues.splitBy = current.splitBy;
+        newValues.splitBy = updates.splitBy;
+      }
+      if (updates.participants) {
+        changedFields.push('participants');
+        previousValues.participants = current.participants;
+        newValues.participants = updates.participants;
+      }
+      if (updates.expenseDate && updates.expenseDate !== current.expenseDate) {
+        changedFields.push('date');
+        previousValues.expenseDate = current.expenseDate;
+        newValues.expenseDate = updates.expenseDate;
+      }
 
       const auditLog = {
         id: 'log_' + now,
         type: 'edited' as const,
         byUid: user.uid,
-        byName: user.displayName,
+        byName: authorFirstName,
         timestamp: now,
         formattedTimestamp,
         changedFields,
-        summary: `Edited by ${user.displayName} at ${formattedTimestamp}`,
+        previousValues,
+        newValues,
+        summary: `Edited by ${authorFirstName} at ${formattedTimestamp}`,
       };
 
       return {
@@ -942,9 +1055,10 @@ export const dataService = {
         splitBy,
         participants,
         shares,
+        expenseDate,
         comment,
         lastModifiedBy: user.uid,
-        lastModifiedByName: user.displayName,
+        lastModifiedByName: authorFirstName,
         lastModifiedAt: now,
         auditLogs: [...(current.auditLogs || []), auditLog],
       };
@@ -962,7 +1076,7 @@ export const dataService = {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const updated = applyUpdatesToEntry({ ...snap.data(), id: snap.id } as ExpenseEntry);
-        await updateDoc(ref, { ...updated });
+        await updateDoc(ref, sanitizeForFirestore({ ...updated }));
       }
     }
 
@@ -973,11 +1087,11 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_modified',
           senderUid: user.uid,
-          senderName: user.displayName,
+          senderName: authorFirstName,
           senderPhotoURL: user.photoURL,
           eventId,
           title: 'Expense Modified',
-          description: `${user.displayName} modified an expense`,
+          description: `${authorFirstName} modified an expense`,
         });
       }
     }
@@ -1641,13 +1755,14 @@ export const dataService = {
     if (!event) throw new Error('Event not found');
 
     const token = generateInvitationToken();
+    const authorFirstName = getFirstName(user.displayName);
     const newLink: Omit<EventInvitationLink, 'id'> = {
       token,
       eventId,
       eventName: event.name,
       eventEmoji: event.emoji,
       createdByUid: user.uid,
-      createdByName: user.displayName,
+      createdByName: authorFirstName,
       createdAt: Date.now(),
       scope: options?.scope || 'full',
       allowedItemIds: options?.allowedItemIds || [],
@@ -1666,7 +1781,8 @@ export const dataService = {
       return saved;
     }
 
-    const ref = await addDoc(collection(db, 'eventInvitationLinks'), newLink);
+    const sanitized = sanitizeForFirestore(newLink);
+    const ref = await addDoc(collection(db, 'eventInvitationLinks'), sanitized);
     return { ...newLink, id: ref.id };
   },
 
@@ -1717,6 +1833,7 @@ export const dataService = {
       throw new Error('The associated event does not exist or has been deleted.');
     }
 
+    const userFirstName = getFirstName(user.displayName);
     const existingMember = event.members[user.uid];
     const memberEntry: EventMember = {
       uid: user.uid,
@@ -1733,18 +1850,17 @@ export const dataService = {
     const slots = { ...(event.slots || {}) };
     if (slotId && slots[slotId]) {
       const slot = slots[slotId];
-      if (!slot.assignedMemberUids.includes(user.uid)) {
-        if (slot.assignedMemberUids.length >= slot.maxCapacity) {
-          throw new Error(`Slot "${slot.name}" is already at full capacity (${slot.maxCapacity}).`);
-        }
-        for (const sId of Object.keys(slots)) {
-          slots[sId] = {
-            ...slots[sId],
-            assignedMemberUids: (slots[sId].assignedMemberUids || []).filter((id) => id !== user.uid),
-          };
-        }
-        slots[slotId].assignedMemberUids.push(user.uid);
+      if (slot.isClaimed && slot.claimedByUid !== user.uid) {
+        throw new Error(`Slot "${slot.placeholderName}" has already been claimed.`);
       }
+      slots[slotId] = {
+        ...slot,
+        isClaimed: true,
+        claimedByUid: user.uid,
+        claimedByName: userFirstName,
+        claimedAt: Date.now(),
+        updatedAt: Date.now(),
+      };
     }
 
     if (!isFirebaseConfigured() || !db) {
@@ -1767,11 +1883,11 @@ export const dataService = {
     }
 
     const eventRef = doc(db, 'events', event.id);
-    await updateDoc(eventRef, {
+    await updateDoc(eventRef, sanitizeForFirestore({
       [`members.${user.uid}`]: memberEntry,
       slots,
       updatedAt: Date.now(),
-    });
+    }));
 
     const linkRef = doc(db, 'eventInvitationLinks', link.id);
     await updateDoc(linkRef, {
@@ -1782,22 +1898,20 @@ export const dataService = {
   },
 
   // ==========================================
-  // SLOTS MANAGEMENT
+  // SLOTS MANAGEMENT (Individual Person Placeholders)
   // ==========================================
-  async createSlot(
+  async createPersonSlot(
     eventId: string,
-    name: string,
-    maxCapacity: number = 4,
-    description?: string
+    placeholderName: string,
+    expectedUid?: string
   ): Promise<EventSlot> {
     const slotId = 'slot_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const newSlot: EventSlot = {
       id: slotId,
       eventId,
-      name,
-      description: description || '',
-      maxCapacity,
-      assignedMemberUids: [],
+      placeholderName: placeholderName.trim(),
+      expectedUid,
+      isClaimed: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -1815,52 +1929,68 @@ export const dataService = {
     }
 
     const eventRef = doc(db, 'events', eventId);
-    await updateDoc(eventRef, {
+    await updateDoc(eventRef, sanitizeForFirestore({
       [`slots.${slotId}`]: newSlot,
       updatedAt: Date.now(),
-    });
+    }));
     return newSlot;
   },
 
-  async updateSlot(
-    eventId: string,
-    slotId: string,
-    updates: Partial<Pick<EventSlot, 'name' | 'maxCapacity' | 'description'>>
-  ): Promise<void> {
-    if (!isFirebaseConfigured() || !db) {
-      const all = getLocal<SplitifyEvent[]>('events', []);
-      const idx = all.findIndex((e) => e.id === eventId);
-      if (idx !== -1 && all[idx].slots && all[idx].slots![slotId]) {
-        all[idx].slots![slotId] = {
-          ...all[idx].slots![slotId],
-          ...updates,
-          updatedAt: Date.now(),
-        };
-        all[idx].updatedAt = Date.now();
-        setLocal('events', all);
-      }
-      return;
+  async deletePersonSlot(eventId: string, slotId: string): Promise<void> {
+    const event = await dataService.getEventById(eventId);
+    if (!event) return;
+    const slot = event.slots?.[slotId];
+    if (!slot) return;
+    if (slot.isClaimed) {
+      throw new Error('Claimed slots cannot be deleted.');
     }
 
-    const eventRef = doc(db, 'events', eventId);
-    const updatePayload: Record<string, any> = { updatedAt: Date.now() };
-    if (updates.name !== undefined) updatePayload[`slots.${slotId}.name`] = updates.name;
-    if (updates.maxCapacity !== undefined) updatePayload[`slots.${slotId}.maxCapacity`] = updates.maxCapacity;
-    if (updates.description !== undefined) updatePayload[`slots.${slotId}.description`] = updates.description;
-    updatePayload[`slots.${slotId}.updatedAt`] = Date.now();
-    await updateDoc(eventRef, updatePayload);
-  },
-
-  async deleteSlot(eventId: string, slotId: string): Promise<void> {
     if (!isFirebaseConfigured() || !db) {
       const all = getLocal<SplitifyEvent[]>('events', []);
       const idx = all.findIndex((e) => e.id === eventId);
       if (idx !== -1 && all[idx].slots) {
         delete all[idx].slots![slotId];
-        for (const member of Object.values(all[idx].members)) {
-          if (member.slotId === slotId) {
-            delete member.slotId;
-          }
+        all[idx].updatedAt = Date.now();
+        setLocal('events', all);
+      }
+      return;
+    }
+
+    const eventRef = doc(db, 'events', eventId);
+    const slots = { ...(event.slots || {}) };
+    delete slots[slotId];
+    await updateDoc(eventRef, sanitizeForFirestore({
+      slots,
+      updatedAt: Date.now(),
+    }));
+  },
+
+  async claimPersonSlot(eventId: string, slotId: string, user: UserProfile): Promise<void> {
+    const event = await dataService.getEventById(eventId);
+    if (!event) throw new Error('Event not found');
+    const slot = event.slots?.[slotId];
+    if (!slot) throw new Error('Slot not found');
+    if (slot.isClaimed && slot.claimedByUid !== user.uid) {
+      throw new Error(`Slot "${slot.placeholderName}" is already claimed by ${slot.claimedByName || 'someone else'}.`);
+    }
+
+    const userFirstName = getFirstName(user.displayName);
+    const updatedSlot: EventSlot = {
+      ...slot,
+      isClaimed: true,
+      claimedByUid: user.uid,
+      claimedByName: userFirstName,
+      claimedAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    if (!isFirebaseConfigured() || !db) {
+      const all = getLocal<SplitifyEvent[]>('events', []);
+      const idx = all.findIndex((e) => e.id === eventId);
+      if (idx !== -1 && all[idx].slots) {
+        all[idx].slots![slotId] = updatedSlot;
+        if (all[idx].members[user.uid]) {
+          all[idx].members[user.uid].slotId = slotId;
         }
         all[idx].updatedAt = Date.now();
         setLocal('events', all);
@@ -1869,81 +1999,53 @@ export const dataService = {
     }
 
     const eventRef = doc(db, 'events', eventId);
-    const snap = await getDoc(eventRef);
-    if (!snap.exists()) return;
-    const ev = snap.data() as SplitifyEvent;
-    const slots = { ...(ev.slots || {}) };
-    delete slots[slotId];
-
-    const members = { ...ev.members };
-    for (const uid of Object.keys(members)) {
-      if (members[uid].slotId === slotId) {
-        members[uid] = { ...members[uid], slotId: undefined };
-      }
-    }
-
-    await updateDoc(eventRef, {
-      slots,
-      members,
+    await updateDoc(eventRef, sanitizeForFirestore({
+      [`slots.${slotId}`]: updatedSlot,
+      [`members.${user.uid}.slotId`]: slotId,
       updatedAt: Date.now(),
-    });
+    }));
+  },
+
+  // Backwards compatibility aliases
+  async createSlot(
+    eventId: string,
+    name: string,
+    _maxCapacity?: number,
+    _description?: string
+  ): Promise<EventSlot> {
+    return dataService.createPersonSlot(eventId, name);
+  },
+
+  async deleteSlot(eventId: string, slotId: string): Promise<void> {
+    return dataService.deletePersonSlot(eventId, slotId);
   },
 
   async assignMemberToSlot(eventId: string, slotId: string, memberUid: string): Promise<void> {
+    // Forward to claim if user object available or assign slotId
     if (!isFirebaseConfigured() || !db) {
       const all = getLocal<SplitifyEvent[]>('events', []);
       const idx = all.findIndex((e) => e.id === eventId);
       if (idx !== -1 && all[idx].slots && all[idx].slots![slotId]) {
-        const targetSlot = all[idx].slots![slotId];
-        if (!targetSlot.assignedMemberUids.includes(memberUid)) {
-          if (targetSlot.assignedMemberUids.length >= targetSlot.maxCapacity) {
-            throw new Error(`Slot "${targetSlot.name}" is already at full capacity (${targetSlot.maxCapacity}).`);
-          }
-          for (const s of Object.values(all[idx].slots!)) {
-            s.assignedMemberUids = s.assignedMemberUids.filter((uid) => uid !== memberUid);
-          }
-          targetSlot.assignedMemberUids.push(memberUid);
-        }
+        const slot = all[idx].slots![slotId];
+        slot.isClaimed = true;
+        slot.claimedByUid = memberUid;
+        slot.claimedByName = all[idx].members[memberUid]?.displayName || 'Member';
+        slot.claimedAt = Date.now();
         if (all[idx].members[memberUid]) {
           all[idx].members[memberUid].slotId = slotId;
         }
-        all[idx].updatedAt = Date.now();
         setLocal('events', all);
       }
       return;
     }
-
     const eventRef = doc(db, 'events', eventId);
-    const snap = await getDoc(eventRef);
-    if (!snap.exists()) return;
-    const ev = snap.data() as SplitifyEvent;
-    const slots = { ...(ev.slots || {}) };
-    const targetSlot = slots[slotId];
-    if (!targetSlot) throw new Error('Slot not found');
-
-    if (!targetSlot.assignedMemberUids.includes(memberUid)) {
-      if (targetSlot.assignedMemberUids.length >= targetSlot.maxCapacity) {
-        throw new Error(`Slot "${targetSlot.name}" is already at full capacity (${targetSlot.maxCapacity}).`);
-      }
-      for (const sId of Object.keys(slots)) {
-        slots[sId] = {
-          ...slots[sId],
-          assignedMemberUids: (slots[sId].assignedMemberUids || []).filter((uid) => uid !== memberUid),
-        };
-      }
-      slots[slotId].assignedMemberUids.push(memberUid);
-    }
-
-    const members = { ...ev.members };
-    if (members[memberUid]) {
-      members[memberUid] = { ...members[memberUid], slotId };
-    }
-
-    await updateDoc(eventRef, {
-      slots,
-      members,
+    await updateDoc(eventRef, sanitizeForFirestore({
+      [`slots.${slotId}.isClaimed`]: true,
+      [`slots.${slotId}.claimedByUid`]: memberUid,
+      [`slots.${slotId}.claimedAt`]: Date.now(),
+      [`members.${memberUid}.slotId`]: slotId,
       updatedAt: Date.now(),
-    });
+    }));
   },
 
   async removeMemberFromSlot(eventId: string, slotId: string, memberUid: string): Promise<void> {
@@ -1951,39 +2053,84 @@ export const dataService = {
       const all = getLocal<SplitifyEvent[]>('events', []);
       const idx = all.findIndex((e) => e.id === eventId);
       if (idx !== -1 && all[idx].slots && all[idx].slots![slotId]) {
-        all[idx].slots![slotId].assignedMemberUids = all[idx].slots![slotId].assignedMemberUids.filter(
-          (uid) => uid !== memberUid
-        );
+        const slot = all[idx].slots![slotId];
+        if (slot.claimedByUid === memberUid) {
+          slot.isClaimed = false;
+          delete slot.claimedByUid;
+          delete slot.claimedByName;
+          delete slot.claimedAt;
+        }
         if (all[idx].members[memberUid]?.slotId === slotId) {
           delete all[idx].members[memberUid].slotId;
         }
-        all[idx].updatedAt = Date.now();
         setLocal('events', all);
       }
       return;
     }
 
     const eventRef = doc(db, 'events', eventId);
-    const snap = await getDoc(eventRef);
-    if (!snap.exists()) return;
-    const ev = snap.data() as SplitifyEvent;
-    const slots = { ...(ev.slots || {}) };
-    if (slots[slotId]) {
-      slots[slotId] = {
-        ...slots[slotId],
-        assignedMemberUids: (slots[slotId].assignedMemberUids || []).filter((uid) => uid !== memberUid),
-      };
+    await updateDoc(eventRef, sanitizeForFirestore({
+      [`slots.${slotId}.isClaimed`]: false,
+      [`slots.${slotId}.claimedByUid`]: null,
+      [`slots.${slotId}.claimedByName`]: null,
+      [`slots.${slotId}.claimedAt`]: null,
+      [`members.${memberUid}.slotId`]: null,
+      updatedAt: Date.now(),
+    }));
+  },
+
+  // ==========================================
+  // PROFILE & HANDLE RENAMING
+  // ==========================================
+  async changeUsernameHandle(user: UserProfile, newHandleRaw: string): Promise<string> {
+    const cleanHandle = newHandleRaw.trim().replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(cleanHandle)) {
+      throw new Error('Username must be 3-20 characters and contain only lowercase letters, numbers, and underscores.');
     }
-    const members = { ...ev.members };
-    if (members[memberUid]?.slotId === slotId) {
-      members[memberUid] = { ...members[memberUid], slotId: undefined };
+    if (user.username?.toLowerCase() === cleanHandle) {
+      return cleanHandle;
     }
 
-    await updateDoc(eventRef, {
-      slots,
-      members,
-      updatedAt: Date.now(),
+    if (!isFirebaseConfigured() || !db) {
+      user.username = cleanHandle;
+      const currentUser = getLocal<UserProfile | null>('current_user', null);
+      if (currentUser && currentUser.uid === user.uid) {
+        setLocal('current_user', { ...currentUser, username: cleanHandle });
+      }
+      return cleanHandle;
+    }
+
+    const firestore = db;
+    const oldHandle = (user.username || '').toLowerCase();
+    const newUsernameRef = doc(firestore, 'usernames', cleanHandle);
+    const userRef = doc(firestore, 'users', user.uid);
+
+    await runTransaction(firestore, async (transaction) => {
+      const newSnap = await transaction.get(newUsernameRef);
+      if (newSnap.exists()) {
+        const data = newSnap.data();
+        if (data && data.uid !== user.uid) {
+          throw new Error(`@${cleanHandle} is already taken. Please choose another.`);
+        }
+      }
+
+      transaction.set(newUsernameRef, {
+        uid: user.uid,
+        createdAt: Date.now(),
+      });
+
+      if (oldHandle && oldHandle !== cleanHandle) {
+        const oldRef = doc(firestore, 'usernames', oldHandle);
+        transaction.delete(oldRef);
+      }
+
+      transaction.update(userRef, {
+        username: cleanHandle,
+        updatedAt: Date.now(),
+      });
     });
+
+    return cleanHandle;
   },
 
   // ==========================================

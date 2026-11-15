@@ -5,13 +5,15 @@ import { dataService } from '@/services/dataService';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
+import { getFirstName } from '@/utils/name';
 import {
-  Layers,
+  Users,
   Plus,
   Trash2,
-  Check,
-  LogOut,
+  CheckCircle2,
+  Clock,
   AlertCircle,
+  UserCheck,
 } from 'lucide-react';
 
 interface SlotsModalProps {
@@ -22,10 +24,7 @@ interface SlotsModalProps {
 
 export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }) => {
   const { user } = useAuth();
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
-  const [capacity, setCapacity] = useState(4);
-  const [description, setDescription] = useState('');
+  const [personName, setPersonName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,30 +32,31 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
 
   const isHost = event.hostUid === user.uid;
   const slotsList: EventSlot[] = Object.values(event.slots || {});
+  const userMember = event.members[user.uid];
+  const userHasClaimedSlot = Boolean(
+    userMember?.slotId || slotsList.some((s) => s.claimedByUid === user.uid)
+  );
 
-  const handleCreateSlot = async (e: React.FormEvent) => {
+  const handleAddPerson = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!personName.trim()) return;
 
     setSubmitting(true);
     setError(null);
     try {
-      await dataService.createSlot(event.id, name.trim(), capacity || 4, description.trim());
-      setName('');
-      setDescription('');
-      setCapacity(4);
-      setShowAddForm(false);
+      await dataService.createPersonSlot(event.id, personName.trim());
+      setPersonName('');
     } catch (err: any) {
-      setError(err.message || 'Failed to create slot');
+      setError(err.message || 'Failed to add person');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteSlot = async (slotId: string) => {
-    if (!confirm('Are you sure you want to delete this slot? Members will become unassigned.')) return;
+  const handleDeleteSlot = async (slotId: string, slotName: string) => {
+    if (!confirm(`Remove placeholder for "${slotName}"?`)) return;
     try {
-      await dataService.deleteSlot(event.id, slotId);
+      await dataService.deletePersonSlot(event.id, slotId);
     } catch (err: any) {
       alert(err.message || 'Failed to delete slot');
     }
@@ -64,17 +64,9 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
 
   const handleClaimSlot = async (slotId: string) => {
     try {
-      await dataService.assignMemberToSlot(event.id, slotId, user.uid);
+      await dataService.claimPersonSlot(event.id, slotId, user);
     } catch (err: any) {
       alert(err.message || 'Failed to claim slot');
-    }
-  };
-
-  const handleLeaveSlot = async (slotId: string) => {
-    try {
-      await dataService.removeMemberFromSlot(event.id, slotId, user.uid);
-    } catch (err: any) {
-      alert(err.message || 'Failed to leave slot');
     }
   };
 
@@ -82,14 +74,14 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Event Slots & Groups"
-      emoji="🚗"
+      title="People"
+      emoji="👥"
       maxWidth="md"
     >
       <div className="space-y-4">
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Slots represent travel cars, hotel rooms, or sub-teams. When adding an expense, you can
-          split with an entire slot in one click!
+          Expected participants who haven't registered or joined yet can be added here. When they
+          join through an invite link, they can claim their spot!
         </p>
 
         {error && (
@@ -99,187 +91,130 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
           </div>
         )}
 
-        {/* Action to show Add Slot Form */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Active Slots ({slotsList.length})
-          </span>
+        {/* Inline Add Person Form */}
+        <form onSubmit={handleAddPerson} className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Type person's name (e.g. Rahul, Priya)..."
+            value={personName}
+            onChange={(e) => setPersonName(e.target.value)}
+            className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-teal-500 focus:outline-none"
+          />
           <Button
-            variant="ghost"
+            type="submit"
+            variant="primary"
             size="sm"
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="text-xs font-bold text-teal-600 dark:text-teal-400"
+            isLoading={submitting}
+            className="text-xs font-bold"
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
-            {showAddForm ? 'Cancel' : 'Add New Slot'}
+            Add Person
           </Button>
-        </div>
+        </form>
 
-        {/* Add Slot Form */}
-        {showAddForm && (
-          <form
-            onSubmit={handleCreateSlot}
-            className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/20 space-y-3"
-          >
-            <span className="text-xs font-bold text-teal-800 dark:text-teal-200 block">
-              Create New Group Slot
-            </span>
+        {/* People / Slots List */}
+        <div className="space-y-2 pt-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+            Expected & Joined ({slotsList.length})
+          </span>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <input
-                type="text"
-                placeholder="Slot name (e.g. Car 1, Room 101)"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="sm:col-span-2 px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
-                required
-              />
-              <input
-                type="number"
-                min={1}
-                max={50}
-                placeholder="Max Capacity"
-                value={capacity}
-                onChange={(e) => setCapacity(parseInt(e.target.value) || 4)}
-                className="px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
-                required
-              />
+          {slotsList.length === 0 ? (
+            <div className="text-center py-8 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <Users className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                No individual slots added yet.
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Add people above to save placeholder spots for them.
+              </p>
             </div>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {slotsList.map((slot) => {
+                const claimedMember = slot.claimedByUid ? event.members[slot.claimedByUid] : null;
+                const displayName = slot.isClaimed
+                  ? claimedMember
+                    ? getFirstName(claimedMember.displayName)
+                    : slot.claimedByName || slot.placeholderName
+                  : slot.placeholderName;
 
-            <input
-              type="text"
-              placeholder="Optional description (e.g. Innova with Rahul driving)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
-            />
-
-            <div className="flex justify-end gap-2">
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                disabled={submitting || !name.trim()}
-              >
-                {submitting ? 'Creating...' : 'Save Slot'}
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {/* Slots List */}
-        {slotsList.length === 0 ? (
-          <div className="text-center py-8 px-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-            <Layers className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-            <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              No slots created yet
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Create slots like "Car 1", "Room 201" for organizing members.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-            {slotsList.map((slot) => {
-              const assignedUids = slot.assignedMemberUids || [];
-              const isUserInSlot = assignedUids.includes(user.uid);
-              const isFull = assignedUids.length >= slot.maxCapacity;
-
-              return (
-                <div
-                  key={slot.id}
-                  className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 shadow-sm flex flex-col gap-2.5"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm text-slate-900 dark:text-white">
-                          {slot.name}
-                        </span>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            isFull
-                              ? 'bg-rose-500/10 text-rose-500'
-                              : 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
-                          }`}
-                        >
-                          {assignedUids.length} / {slot.maxCapacity} {isFull ? '(Full)' : 'spots'}
+                return (
+                  <div
+                    key={slot.id}
+                    className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                      slot.isClaimed
+                        ? 'border-emerald-200/80 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20'
+                        : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-850'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar
+                        src={claimedMember?.photoURL}
+                        name={displayName}
+                        size="sm"
+                      />
+                      <div className="truncate">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {displayName}
+                          </span>
+                          {slot.isClaimed && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Joined
+                            </span>
+                          )}
+                          {!slot.isClaimed && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                              <Clock className="w-3 h-3" />
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-400 block truncate">
+                          {slot.isClaimed
+                            ? `Claimed spot for "${slot.placeholderName}"`
+                            : `Expected placeholder`}
                         </span>
                       </div>
-                      {slot.description && (
-                        <p className="text-xs text-slate-400 mt-0.5">{slot.description}</p>
-                      )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {isUserInSlot ? (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* If unclaimed and current user hasn't claimed yet, offer to claim */}
+                      {!slot.isClaimed && !userHasClaimedSlot && (
                         <Button
-                          variant="secondary"
+                          variant="outline"
                           size="sm"
-                          onClick={() => handleLeaveSlot(slot.id)}
-                          className="!py-1 !px-2.5 text-xs text-amber-600 dark:text-amber-400"
-                        >
-                          <LogOut className="w-3 h-3 mr-1" />
-                          Leave
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          disabled={isFull}
                           onClick={() => handleClaimSlot(slot.id)}
-                          className="!py-1 !px-2.5 text-xs"
+                          className="text-[11px] font-bold text-teal-600 dark:text-teal-400"
                         >
-                          <Check className="w-3 h-3 mr-1" />
-                          Join
+                          <UserCheck className="w-3.5 h-3.5 mr-1" />
+                          Claim Spot
                         </Button>
                       )}
 
-                      {isHost && (
+                      {/* Unclaimed slots can be deleted by host; claimed slots CANNOT be deleted */}
+                      {!slot.isClaimed && isHost && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteSlot(slot.id)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
-                          title="Delete slot"
+                          onClick={() => handleDeleteSlot(slot.id, slot.placeholderName)}
+                          title="Delete Unclaimed Placeholder"
+                          className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
                   </div>
-
-                  {/* Member avatars in slot */}
-                  {assignedUids.length > 0 && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                      <span className="text-[10px] font-bold text-slate-400">Members:</span>
-                      <div className="flex items-center -space-x-1.5">
-                        {assignedUids.map((uid) => {
-                          const member = event.members[uid];
-                          return (
-                            <Avatar
-                              key={uid}
-                              src={member?.photoURL}
-                              name={member?.displayName || uid}
-                              size="xs"
-                              className="ring-2 ring-white dark:ring-slate-800"
-                            />
-                          );
-                        })}
-                      </div>
-                      <span className="text-[10px] text-slate-500 truncate max-w-xs">
-                        {assignedUids.map((uid) => event.members[uid]?.displayName || uid).join(', ')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
+            Done
           </Button>
         </div>
       </div>

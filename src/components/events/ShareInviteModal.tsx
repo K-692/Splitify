@@ -8,10 +8,6 @@ import {
   Copy,
   Check,
   Shield,
-  MessageCircle,
-  Send,
-  Mail,
-  Smartphone,
   Layers,
 } from 'lucide-react';
 
@@ -67,14 +63,11 @@ export const ShareInviteModal: React.FC<ShareInviteModalProps> = ({
 
   if (!isOpen) return null;
 
-  const appBaseUrl = window?.location?.origin
-    ? `${window.location.origin}${window.location.pathname}`
-    : 'https://k-692.github.io/Splitify/';
+  const origin = window?.location?.origin || 'https://k-692.github.io';
+  const cleanBase = `${origin}/Splitify`;
   const inviteUrl = currentLink
-    ? `${appBaseUrl}#/join/${currentLink.token}`
-    : `${appBaseUrl}#/events/${event.id}`;
-
-  const shareText = `Join me on Splitify for "${event.emoji} ${event.name}" to view and split expenses easily!\n${inviteUrl}`;
+    ? `${cleanBase}/join/${currentLink.token}`
+    : `${cleanBase}/events/${event.id}`;
 
   const handleCopy = async () => {
     try {
@@ -85,22 +78,6 @@ export const ShareInviteModal: React.FC<ShareInviteModalProps> = ({
       // Fallback
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    }
-  };
-
-  const handleNativeShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Splitify — ${event.name}`,
-          text: `Join me on Splitify for "${event.emoji} ${event.name}"!`,
-          url: inviteUrl,
-        });
-      } catch (e) {
-        // User cancelled or not supported
-      }
-    } else {
-      handleCopy();
     }
   };
 
@@ -215,7 +192,7 @@ export const ShareInviteModal: React.FC<ShareInviteModalProps> = ({
               ) : (
                 <>
                   <Copy className="w-4 h-4 mr-1" />
-                  Copy
+                  Copy Link
                 </>
               )}
             </Button>
@@ -225,61 +202,6 @@ export const ShareInviteModal: React.FC<ShareInviteModalProps> = ({
               ✓ Link copied to clipboard! Share it with friends.
             </p>
           )}
-        </div>
-
-        {/* Social Share Shortcuts */}
-        <div>
-          <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-            Share Directly
-          </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* WhatsApp */}
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(shareText)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] text-xs font-bold transition-all"
-            >
-              <MessageCircle className="w-4 h-4" />
-              WhatsApp
-            </a>
-
-            {/* Telegram */}
-            <a
-              href={`https://t.me/share/url?url=${encodeURIComponent(
-                inviteUrl
-              )}&text=${encodeURIComponent(
-                `Join "${event.emoji} ${event.name}" on Splitify to split expenses!`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-[#0088cc]/10 hover:bg-[#0088cc]/20 text-[#0088cc] text-xs font-bold transition-all"
-            >
-              <Send className="w-4 h-4" />
-              Telegram
-            </a>
-
-            {/* Email */}
-            <a
-              href={`mailto:?subject=${encodeURIComponent(
-                `Splitify Invitation: ${event.name}`
-              )}&body=${encodeURIComponent(shareText)}`}
-              className="flex items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-bold transition-all"
-            >
-              <Mail className="w-4 h-4" />
-              Email
-            </a>
-
-            {/* Native Mobile Share */}
-            <button
-              type="button"
-              onClick={handleNativeShare}
-              className="flex items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-teal-500/10 hover:bg-teal-500/20 text-teal-600 dark:text-teal-400 text-xs font-bold transition-all"
-            >
-              <Smartphone className="w-4 h-4" />
-              Device Share
-            </button>
-          </div>
         </div>
 
         {error && (

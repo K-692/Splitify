@@ -5,14 +5,15 @@ import { dataService } from '@/services/dataService';
 import { SplitifyEvent, EventInvitationLink, EventSlot } from '@/types';
 import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
+import { getFirstName } from '@/utils/name';
 import {
   CheckCircle,
   AlertCircle,
   Shield,
-  Layers,
   ArrowRight,
   LogIn,
-  Plus,
+  UserPlus,
+  UserCheck,
 } from 'lucide-react';
 
 export const JoinPage: React.FC = () => {
@@ -27,11 +28,6 @@ export const JoinPage: React.FC = () => {
 
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [joining, setJoining] = useState(false);
-
-  // New slot creation state
-  const [showCreateSlot, setShowCreateSlot] = useState(false);
-  const [newSlotName, setNewSlotName] = useState('');
-  const [newSlotCapacity, setNewSlotCapacity] = useState(4);
 
   useEffect(() => {
     if (!token) {
@@ -109,29 +105,6 @@ export const JoinPage: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Google sign in failed. Please try again.');
-    }
-  };
-
-  const handleCreateNewSlot = async () => {
-    if (!event || !newSlotName.trim()) return;
-    try {
-      const created = await dataService.createSlot(
-        event.id,
-        newSlotName.trim(),
-        newSlotCapacity || 4
-      );
-      // Update local event state
-      setEvent((prev) => {
-        if (!prev) return prev;
-        const slots = { ...(prev.slots || {}) };
-        slots[created.id] = created;
-        return { ...prev, slots };
-      });
-      setSelectedSlotId(created.id);
-      setShowCreateSlot(false);
-      setNewSlotName('');
-    } catch (err: any) {
-      alert(err.message || 'Failed to create slot');
     }
   };
 
@@ -268,120 +241,72 @@ export const JoinPage: React.FC = () => {
         ) : (
           /* User is authenticated and ready to join */
           <div className="space-y-5">
-            {/* Slot Selection */}
+            {/* Slot Claiming or Join as New Person */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-teal-500" />
-                  Choose a Group Slot (Optional)
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateSlot(!showCreateSlot)}
-                  className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" />
-                  {showCreateSlot ? 'Cancel' : 'New Slot'}
-                </button>
-              </div>
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 block">
+                How are you joining?
+              </label>
 
-              {/* Create new slot form */}
-              {showCreateSlot && (
-                <div className="p-3 mb-3 rounded-2xl bg-teal-500/10 border border-teal-500/20 space-y-2.5">
-                  <span className="text-xs font-bold text-teal-800 dark:text-teal-200">
-                    Create Slot (e.g. Car 1, Room 102)
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      placeholder="Slot name"
-                      value={newSlotName}
-                      onChange={(e) => setNewSlotName(e.target.value)}
-                      className="col-span-2 px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      placeholder="Capacity"
-                      value={newSlotCapacity}
-                      onChange={(e) => setNewSlotCapacity(parseInt(e.target.value) || 4)}
-                      className="px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleCreateNewSlot}
-                    disabled={!newSlotName.trim()}
-                    className="w-full text-xs"
-                  >
-                    Save & Select Slot
-                  </Button>
-                </div>
-              )}
-
-              {/* Existing slots grid */}
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2">
                 <button
                   type="button"
                   onClick={() => setSelectedSlotId('')}
-                  className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
+                  className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
                     selectedSlotId === ''
-                      ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200'
+                      ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-1 ring-teal-500'
                       : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  <span>Independent / No Slot</span>
-                  <span className="text-[10px] text-slate-400 font-semibold">General Member</span>
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-teal-500" />
+                    <span>Join as New Person</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-semibold">Fresh Member</span>
                 </button>
 
-                {slotsList.map((slot) => {
-                  const currentCount = (slot.assignedMemberUids || []).length;
-                  const isFull = currentCount >= slot.maxCapacity;
-                  const isSelected = selectedSlotId === slot.id;
-
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      disabled={isFull && !isSelected}
-                      onClick={() => setSelectedSlotId(slot.id)}
-                      className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between text-xs ${
-                        isSelected
-                          ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 font-bold'
-                          : isFull
-                          ? 'border-slate-200 dark:border-slate-800 opacity-50 cursor-not-allowed text-slate-400'
-                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300 font-medium'
-                      }`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-bold">{slot.name}</span>
-                        {slot.description && (
-                          <span className="text-[10px] text-slate-400">{slot.description}</span>
-                        )}
-                      </div>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isFull
-                            ? 'bg-rose-500/10 text-rose-500'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                        }`}
-                      >
-                        {currentCount} / {slot.maxCapacity} {isFull ? '(Full)' : 'spots'}
-                      </span>
-                    </button>
-                  );
-                })}
+                {slotsList.filter((s) => !s.isClaimed).length > 0 && (
+                  <div className="pt-2">
+                    <span className="text-[11px] font-bold text-slate-400 mb-1.5 block">
+                      Or claim an expected spot saved for you:
+                    </span>
+                    <div className="space-y-1.5">
+                      {slotsList
+                        .filter((s) => !s.isClaimed)
+                        .map((slot) => {
+                          const isSelected = selectedSlotId === slot.id;
+                          return (
+                            <button
+                              key={slot.id}
+                              type="button"
+                              onClick={() => setSelectedSlotId(slot.id)}
+                              className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
+                                isSelected
+                                  ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-1 ring-teal-500'
+                                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <UserCheck className="w-4 h-4 text-teal-500" />
+                                <span>Claim spot for "{slot.placeholderName}"</span>
+                              </div>
+                              <span className="text-[10px] text-teal-600 dark:text-teal-400 font-bold">
+                                Select Spot
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Current user confirmation info */}
             <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
-              <Avatar src={user.photoURL} name={user.displayName} size="sm" />
+              <Avatar src={user.photoURL} name={getFirstName(user.displayName)} size="sm" />
               <div className="flex flex-col text-xs">
                 <span className="font-bold text-slate-900 dark:text-white">
-                  Joining as {user.displayName}
+                  Joining as {getFirstName(user.displayName)}
                 </span>
                 <span className="text-slate-400">{user.email}</span>
               </div>

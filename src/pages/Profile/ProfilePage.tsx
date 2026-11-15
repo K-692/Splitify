@@ -1,26 +1,67 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/app/providers/AuthContext';
 import { useTheme } from '@/app/providers/ThemeContext';
+import { dataService } from '@/services/dataService';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
+import { Modal } from '@/components/common/Modal';
 import {
   Moon,
   Sun,
-  ShieldCheck,
   LogOut,
   Mail,
   AtSign,
   Palette,
+  Edit2,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
-  const { user, signOut, isFirebaseConnected } = useAuth();
+  const { user, signOut, updateProfile } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  const [isEditHandleModalOpen, setIsEditHandleModalOpen] = useState(false);
+  const [newHandle, setNewHandle] = useState('');
+  const [handleError, setHandleError] = useState<string | null>(null);
+  const [isSavingHandle, setIsSavingHandle] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   if (!user) return null;
 
+  const handleOpenEditHandle = () => {
+    setNewHandle(user.username || '');
+    setHandleError(null);
+    setIsEditHandleModalOpen(true);
+  };
+
+  const handleSaveHandle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setHandleError(null);
+    setIsSavingHandle(true);
+    try {
+      const updatedUsername = await dataService.changeUsernameHandle(user, newHandle);
+      await updateProfile({ username: updatedUsername });
+      setIsEditHandleModalOpen(false);
+      setSuccessMsg(`Handle updated to @${updatedUsername}`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setHandleError(err.message || 'Failed to update handle');
+    } finally {
+      setIsSavingHandle(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12 max-w-xl mx-auto">
+      {/* Toast Alert */}
+      {successMsg && (
+        <div className="fixed top-20 right-4 z-50 bg-[#203D62] text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
+          <CheckCircle className="w-4 h-4 text-teal-400" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-black text-[#203D62] dark:text-white tracking-tight flex items-center gap-2">
@@ -37,9 +78,19 @@ export const ProfilePage: React.FC = () => {
         <h2 className="text-xl font-black text-slate-900 dark:text-white">
           {user.displayName}
         </h2>
-        <span className="text-xs font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-3 py-1 rounded-full mt-1">
-          @{user.username}
-        </span>
+        <div className="flex items-center gap-1.5 mt-1">
+          <span className="text-xs font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-3 py-1 rounded-full font-mono">
+            @{user.username}
+          </span>
+          <button
+            type="button"
+            onClick={handleOpenEditHandle}
+            className="p-1 text-slate-400 hover:text-teal-500 transition-colors"
+            title="Edit Splitify Handle"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         <div className="w-full mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 space-y-3 text-left">
           <div className="flex items-center justify-between text-xs font-semibold py-1">
@@ -53,16 +104,16 @@ export const ProfilePage: React.FC = () => {
             <span className="text-slate-400 flex items-center gap-2">
               <AtSign className="w-4 h-4 text-teal-500" /> Splitify Handle
             </span>
-            <span className="text-slate-800 dark:text-slate-200 font-mono">@{user.username}</span>
-          </div>
-
-          <div className="flex items-center justify-between text-xs font-semibold py-1">
-            <span className="text-slate-400 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-teal-500" /> Backend
-            </span>
-            <span className="text-slate-800 dark:text-slate-200">
-              {isFirebaseConnected ? 'Cloud Firestore (Production)' : 'Interactive Local / Demo'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-800 dark:text-slate-200 font-mono">@{user.username}</span>
+              <button
+                type="button"
+                onClick={handleOpenEditHandle}
+                className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
+              >
+                Edit
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -99,34 +150,80 @@ export const ProfilePage: React.FC = () => {
             )}
           </button>
         </div>
-
-        {/* Brand Theme Palette Info */}
-        <div className="py-2">
-          <p className="text-xs font-extrabold text-slate-900 dark:text-white mb-2">
-            Splitify Brand Palette
-          </p>
-          <div className="grid grid-cols-5 gap-2 text-center text-[10px] font-bold">
-            <div className="bg-[#203D62] text-white p-2 rounded-xl">Navy</div>
-            <div className="bg-[#16AA88] text-white p-2 rounded-xl">Teal</div>
-            <div className="bg-[#F36B2C] text-white p-2 rounded-xl">Orange</div>
-            <div className="bg-[#F5A623] text-white p-2 rounded-xl">Yellow</div>
-            <div className="bg-[#60BCE8] text-white p-2 rounded-xl">Blue</div>
-          </div>
-        </div>
       </div>
 
-      {/* Sign Out Button */}
-      <div className="pt-2">
+      {/* Account Action */}
+      <div className="flex justify-center pt-2">
         <Button
-          variant="danger"
-          size="lg"
+          variant="outline"
+          size="md"
           onClick={signOut}
-          className="w-full !rounded-2xl shadow-sm"
-          leftIcon={<LogOut className="w-4 h-4" />}
+          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20 border-rose-200 dark:border-rose-900"
         >
+          <LogOut className="w-4 h-4 mr-2" />
           Sign Out of Splitify
         </Button>
       </div>
+
+      {/* Edit Handle Modal */}
+      <Modal
+        isOpen={isEditHandleModalOpen}
+        onClose={() => setIsEditHandleModalOpen(false)}
+        title="Edit Splitify Handle"
+        emoji="🏷️"
+        maxWidth="sm"
+      >
+        <form onSubmit={handleSaveHandle} className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Choose a unique handle for your Splitify profile. Your friends can find and add you by
+            this handle.
+          </p>
+
+          {handleError && (
+            <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{handleError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+              Handle
+            </label>
+            <div className="relative flex items-center">
+              <span className="absolute left-3.5 text-slate-400 font-bold text-sm">@</span>
+              <input
+                type="text"
+                placeholder="e.g. rahul_s"
+                value={newHandle}
+                onChange={(e) => setNewHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                required
+                minLength={3}
+                maxLength={20}
+                autoFocus
+                className="w-full pl-8 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              />
+            </div>
+            <span className="text-[11px] text-slate-400 mt-1 block">
+              3-20 characters. Lowercase letters, numbers, and underscores only.
+            </span>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={() => setIsEditHandleModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="md" isLoading={isSavingHandle}>
+              Save Handle
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

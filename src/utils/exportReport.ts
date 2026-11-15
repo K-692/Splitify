@@ -23,10 +23,9 @@ export function generatePlainTextExpenseReport(
   const lines: string[] = [];
 
   // 1. EVENT LINK FIRST AT THE VERY TOP
-  const appBaseUrl = window?.location?.origin
-    ? `${window.location.origin}${window.location.pathname}`
-    : 'https://k-692.github.io/Splitify/';
-  const eventLink = invitationUrl || `${appBaseUrl}#/events/${event.id}`;
+  const origin = window?.location?.origin || 'https://k-692.github.io';
+  const cleanBase = `${origin}/Splitify`;
+  const eventLink = invitationUrl || `${cleanBase}/events/${event.id}`;
 
   lines.push(`🔗 Event Link: ${eventLink}`);
   lines.push('');

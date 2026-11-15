@@ -9,6 +9,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { formatCurrency } from '@/utils/currency';
+import { getFirstName } from '@/utils/name';
 import {
   Plus,
   Share2,
@@ -30,13 +31,14 @@ export const HomePage: React.FC = () => {
   const navigate = useNavigate();
 
   const [events, setEvents] = useState<SplitifyEvent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [eventStats, setEventStats] = useState<Record<string, EventFinancialStats>>({});
 
   // Create Event modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [eventNameInput, setEventNameInput] = useState('');
   const [currencyInput, setCurrencyInput] = useState('INR');
+  const [personInput, setPersonInput] = useState('');
+  const [expectedPeople, setExpectedPeople] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -48,7 +50,6 @@ export const HomePage: React.FC = () => {
     if (!user) return;
     const unsub = dataService.subscribeEvents(user.uid, (list) => {
       setEvents(list);
-      setLoading(false);
     });
     return () => unsub();
   }, [user]);
@@ -100,6 +101,15 @@ export const HomePage: React.FC = () => {
     };
   }, [user, events]);
 
+  const handleAddPerson = () => {
+    const trimmed = personInput.trim();
+    if (!trimmed) return;
+    if (!expectedPeople.includes(trimmed)) {
+      setExpectedPeople([...expectedPeople, trimmed]);
+    }
+    setPersonInput('');
+  };
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !eventNameInput.trim()) return;
@@ -107,13 +117,18 @@ export const HomePage: React.FC = () => {
     setIsSubmitting(true);
     setModalError(null);
     try {
+      const initialPeople = expectedPeople.map((name) => ({ name }));
       const eventId = await dataService.createEvent(
         eventNameInput.trim(),
         user,
-        currencyInput
+        currencyInput,
+        undefined,
+        initialPeople
       );
       setIsCreateModalOpen(false);
       setEventNameInput('');
+      setExpectedPeople([]);
+      setPersonInput('');
       navigate(`/events/${eventId}`);
     } catch (err: any) {
       setModalError(err.message || 'Failed to create event');
@@ -148,22 +163,17 @@ export const HomePage: React.FC = () => {
         </Button>
       </div>
 
-      {/* Events List */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <div className="w-9 h-9 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mb-3" />
-          <span className="text-xs font-semibold text-slate-400">Loading your events...</span>
-        </div>
-      ) : events.length === 0 ? (
+      {/* Events List — No artificial loading screen */}
+      {events.length === 0 ? (
         <div className="text-center py-16 px-6 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="w-16 h-16 mx-auto rounded-3xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center text-3xl mb-4">
             🏖️
           </div>
           <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-            No events yet
+            Empty
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-            Create an event to start recording expenses, generating invitation links, and splitting with friends.
+            You don't have any active events. Create an event to start recording expenses and splitting with friends.
           </p>
           <Button
             variant="primary"
@@ -172,7 +182,7 @@ export const HomePage: React.FC = () => {
             onClick={() => setIsCreateModalOpen(true)}
           >
             <Plus className="w-4 h-4 mr-1.5" />
-            Create Your First Event
+            Create Event
           </Button>
         </div>
       ) : (
@@ -273,7 +283,7 @@ export const HomePage: React.FC = () => {
                       <Avatar
                         key={m.uid}
                         src={m.photoURL}
-                        name={m.displayName}
+                        name={getFirstName(m.displayName)}
                         size="xs"
                         className="ring-2 ring-white dark:ring-[#15263C]"
                       />
@@ -302,7 +312,7 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsCreateModalOpen(false)}
         title="Create New Event"
         emoji="🏖️"
-        maxWidth="sm"
+        maxWidth="md"
       >
         <form onSubmit={handleCreateEvent} className="space-y-4">
           {modalError && (
@@ -312,7 +322,7 @@ export const HomePage: React.FC = () => {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
               Event Name
             </label>
             <input
@@ -320,23 +330,23 @@ export const HomePage: React.FC = () => {
               placeholder="e.g. Goa Trip, Flat 402 Expenses, Dinner"
               value={eventNameInput}
               onChange={(e) => setEventNameInput(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none transition-shadow shadow-sm"
               autoFocus
               required
             />
-            <span className="text-[11px] text-slate-400 mt-1 block">
+            <span className="text-[11px] text-slate-400 mt-1.5 block">
               Emoji will be automatically selected based on the name.
             </span>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
               Currency
             </label>
             <select
               value={currencyInput}
               onChange={(e) => setCurrencyInput(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none shadow-sm cursor-pointer"
             >
               <option value="INR">INR (₹) - Indian Rupee (Default)</option>
               <option value="USD">USD ($) - US Dollar</option>
@@ -346,6 +356,60 @@ export const HomePage: React.FC = () => {
               <option value="CAD">CAD (CA$) - Canadian Dollar</option>
               <option value="AUD">AUD (AU$) - Australian Dollar</option>
             </select>
+          </div>
+
+          {/* People Joining (Expected slots) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+              People Joining (Optional)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. Rahul, Priya, Amit"
+                value={personInput}
+                onChange={(e) => setPersonInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddPerson();
+                  }
+                }}
+                className="flex-1 h-11 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none shadow-sm"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddPerson}
+                className="text-xs font-bold text-teal-600 dark:text-teal-400 h-11 px-4 rounded-2xl"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Add Person
+              </Button>
+            </div>
+            {expectedPeople.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {expectedPeople.map((name, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/20"
+                  >
+                    <span>{name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setExpectedPeople(expectedPeople.filter((_, idx) => idx !== i))}
+                      className="text-slate-400 hover:text-rose-500 ml-0.5 font-bold"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <span className="text-[11px] text-slate-400 mt-1 block">
+              Creates slots for expected members. They can claim their slot when they join!
+            </span>
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">

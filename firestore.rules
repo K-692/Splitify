@@ -99,15 +99,14 @@ rules_version = '2';
 //       * slotId: string (optional)
 //       * scope: string (optional, 'full' | 'selected_items')
 //       * allowedItemIds: list of strings (optional)
-//   - slots: map (optional, <= 50 slots) - Map of slotId to EventSlot:
+//   - slots: map (optional, <= 50 slots) - Map of slotId to EventSlot (individual person slot model):
 //       * id: string
 //       * eventId: string
-//       * name: string
-//       * description: string (optional)
-//       * maxCapacity: number
-//       * assignedMemberUids: list of strings
-//       * createdAt: number
-//       * updatedAt: number
+//       * placeholderName: string
+//       * isClaimed: bool
+//       * claimedByUid: string (optional)
+//       * claimedByName: string (optional)
+//       * claimedAt: number (optional)
 //   - joinCode: string (optional, <= 20 chars) - Public 6-char share code
 //   - createdAt: number (required, immutable) - Timestamp
 //   - updatedAt: number (required) - Timestamp
@@ -134,6 +133,7 @@ rules_version = '2';
 //   - participants: list of strings (optional, <= 100 items) - Participant UIDs
 //   - shares: map (optional, <= 100 entries) - UID -> minor unit allocation
 //   - comment: string (optional, <= 500 chars) - Item notes
+//   - expenseDate: string (optional, YYYY-MM-DD <= 20 chars) - Custom expense occurrence date
 //   - createdBy: string (optional, <= 128 chars) - Creator UID
 //   - createdByName: string (optional, <= 100 chars) - Creator name
 //   - lastModifiedBy: string (optional, <= 128 chars) - Last modifier UID
@@ -154,6 +154,7 @@ rules_version = '2';
 //   - participants: list (required, 1-100 items) - Participant UIDs
 //   - shares: map (required, <= 100 entries) - UID -> minor unit allocation
 //   - comment: string (optional, <= 500 chars) - Notes
+//   - expenseDate: string (optional, YYYY-MM-DD <= 20 chars) - Custom expense occurrence date
 //   - createdBy: string (required, immutable) - Creator UID
 //   - createdByName: string (required, 1-100 chars) - Creator display name
 //   - createdAt: number (required, immutable) - Timestamp
@@ -362,6 +363,7 @@ service cloud.firestore {
                'eventId', 'name', 'emoji', 'createdAt', 'updatedAt',
                'isCategory', 'isSettlementsItem', 'deleted', 'deletedAt', 'deletedBy',
                'costMinor', 'paidBy', 'splitBy', 'participants', 'shares', 'comment',
+               'expenseDate',
                'createdBy', 'createdByName', 'lastModifiedBy', 'lastModifiedByName',
                'lastModifiedAt', 'auditLogs'
              ]) &&
@@ -381,6 +383,7 @@ service cloud.firestore {
              (!('participants' in data) || (data.participants is list && data.participants.size() <= 100)) &&
              (!('shares' in data) || (data.shares is map && data.shares.size() <= 100)) &&
              (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
+             (!('expenseDate' in data) || (data.expenseDate is string && data.expenseDate.size() <= 20)) &&
              (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 128)) &&
              (!('createdByName' in data) || (data.createdByName is string && data.createdByName.size() <= 100)) &&
              (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 128)) &&
@@ -399,6 +402,7 @@ service cloud.firestore {
              data.keys().hasOnly([
                'eventId', 'itemId', 'name', 'emoji', 'costMinor',
                'paidBy', 'splitBy', 'participants', 'shares', 'comment',
+               'expenseDate',
                'createdBy', 'createdByName', 'createdAt',
                'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt',
                'deleted', 'deletedAt', 'deletedBy', 'auditLogs'
@@ -420,6 +424,7 @@ service cloud.firestore {
              data.lastModifiedAt is number &&
              data.auditLogs is list && data.auditLogs.size() <= 200 &&
              (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
+             (!('expenseDate' in data) || (data.expenseDate is string && data.expenseDate.size() <= 20)) &&
              (!('deleted' in data) || data.deleted is bool) &&
              (!('deletedAt' in data) || data.deletedAt is number) &&
              (!('deletedBy' in data) || (data.deletedBy is string && data.deletedBy.size() <= 128));

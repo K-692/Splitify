@@ -39,3 +39,52 @@ export function formatTimeAgo(timestamp: number): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return formatAuditTimestamp(timestamp);
 }
+
+/**
+ * Returns today's date in local calendar date format: "YYYY-MM-DD"
+ * Avoids any timezone shift bugs.
+ */
+export function getTodayLocalDateString(refDate: Date = new Date()): string {
+  const year = refDate.getFullYear();
+  const month = String(refDate.getMonth() + 1).padStart(2, '0');
+  const day = String(refDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Validates whether a string matches "YYYY-MM-DD" format.
+ */
+export function isValidDateString(dateStr?: string | null): boolean {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const [, y, m, d] = match;
+  const year = parseInt(y, 10);
+  const month = parseInt(m, 10);
+  const day = parseInt(d, 10);
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  return year >= 1970 && year <= 2100;
+}
+
+/**
+ * Formats a "YYYY-MM-DD" calendar date string into a user-friendly format:
+ * e.g. "2026-11-15" -> "15 Nov 2026"
+ * Parses purely by parts to prevent timezone offsets.
+ */
+export function formatDisplayExpenseDate(dateStr?: string | null): string {
+  if (!dateStr || !isValidDateString(dateStr)) {
+    return 'Recent';
+  }
+
+  const [y, m, d] = dateStr.split('-');
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  const monthName = months[parseInt(m, 10) - 1] || m;
+  const dayNum = parseInt(d, 10);
+
+  return `${dayNum} ${monthName} ${y}`;
+}
+

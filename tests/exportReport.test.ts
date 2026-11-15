@@ -66,7 +66,7 @@ describe('generatePlainTextExpenseReport', () => {
   ];
 
   it('puts the event invitation link first at the very top of the report', () => {
-    const customUrl = 'https://k-692.github.io/Splitify/#/join/invite-xyz-123';
+    const customUrl = 'https://k-692.github.io/Splitify/join/invite-xyz-123';
     const report = generatePlainTextExpenseReport(
       mockEvent,
       mockItems,
@@ -77,7 +77,7 @@ describe('generatePlainTextExpenseReport', () => {
     );
 
     const firstLine = report.split('\n')[0];
-    expect(firstLine).toBe('🔗 Event Link: https://k-692.github.io/Splitify/#/join/invite-xyz-123');
+    expect(firstLine).toBe('🔗 Event Link: https://k-692.github.io/Splitify/join/invite-xyz-123');
   });
 
   it('correctly aggregates standalone items and category subitems without double counting', () => {

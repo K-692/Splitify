@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/Login/LoginPage';
@@ -29,8 +29,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 export const AppRouter: React.FC = () => {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/Splitify';
   return (
-    <HashRouter>
+    <BrowserRouter basename={basename}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/join/:token" element={<JoinPage />} />
@@ -54,6 +55,6 @@ export const AppRouter: React.FC = () => {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   );
 };

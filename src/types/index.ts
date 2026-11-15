@@ -51,10 +51,12 @@ export interface EventMember {
 export interface EventSlot {
   id: string;
   eventId: string;
-  name: string; // e.g. "Car 1", "Room 102", "Self Arrangement"
-  description?: string;
-  maxCapacity: number; // e.g. 4
-  assignedMemberUids: string[];
+  placeholderName: string; // The person's expected name (e.g. "Rahul", "Aman")
+  expectedUid?: string; // If selected from existing friends
+  isClaimed: boolean;
+  claimedByUid?: string; // UID of the authenticated user who claimed it
+  claimedByName?: string; // First name / display name of claimant
+  claimedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -114,6 +116,8 @@ export interface ExpenseAuditLog {
   timestamp: number;
   formattedTimestamp: string; // "09:30 PM 15:11:2026"
   changedFields?: string[];
+  previousValues?: Record<string, any>;
+  newValues?: Record<string, any>;
   summary?: string;
 }
 
@@ -138,6 +142,7 @@ export interface EventItem {
 
   // Direct expense properties (when isCategory is false/undefined)
   costMinor?: number; // Integer minor currency units (paise/cents: 100000 = 1000.00)
+  expenseDate?: string; // Calendar date in "YYYY-MM-DD" format
   paidBy?: string; // UID of payer
   splitBy?: SplitMode;
   participants?: string[]; // UIDs of participants
@@ -158,6 +163,7 @@ export interface ExpenseEntry {
   name: string;
   emoji: string;
   costMinor: number; // Stored in minor currency units (paise/cents: 100000 = 1000.00)
+  expenseDate?: string; // Calendar date in "YYYY-MM-DD" format
   paidBy: string; // UID of payer
   splitBy: SplitMode;
   participants: string[]; // UIDs of participants

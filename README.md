@@ -51,26 +51,38 @@ Splitify adopts an **Item-First architecture** designed for speed and flexibilit
   ```
 
 ### 3. 🔗 Event Invitation Links (No Join Codes)
-- **Unique Shareable URLs:** Every event generates unique invitation links (e.g. `https://k-692.github.io/Splitify/#/join/<token>`). Join Codes are completely removed.
-- **Direct Social Sharing:** One-click sharing via WhatsApp, Telegram, Email, Device Share (Web Share API), and Copy Link.
+- **Unique Shareable URLs:** Every event generates clean invitation URLs (e.g. `https://k-692.github.io/Splitify/join/<token>`). No hashes (`#`) in URLs thanks to modern GitHub Pages SPA routing with `404.html`. Join Codes are completely removed.
+- **Copy Link Invitation:** One-click copying of invitation links with full event access or selected-item scopes.
 - **Flexible Scopes:**
   - **Full Event Access:** Invitees can view and participate in all event expenses.
   - **Selected Items Only:** Restrict invitees to specific items (e.g., someone only joining for the cab or hotel).
-- **Smooth Invitation Onboarding:** Unauthenticated visitors are guided to Google sign-in and returned directly to the invitation to select a slot and join.
+- **Smooth Invitation Onboarding:** Unauthenticated visitors are guided to Google sign-in and returned directly to the invitation to claim an expected person slot or join as a new person.
 
-### 4. 🚗 Event Slots & Group-Based Splitting
-- **Named Groups Within Events:** Organize members into travel cars, hotel rooms, or sub-teams (e.g., "Car 1", "Innova", "Room 102", "Self Arrangement").
-- **Configurable Capacity:** Set max capacities per slot. Members can join or leave slots.
-- **Slot-Based One-Click Splitting:** When creating or editing an expense, selecting a slot automatically selects all members assigned to that slot!
+### 4. 👥 Individual Person Slots ("People")
+- **Expected Participant Placeholders:** Hosts can specify expected people during event creation via inline chips (e.g., "Rahul", "Priya") or add them later in the **People** screen.
+- **Slot Claiming:** When an invitee joins via an invitation link, they can claim their dedicated spot (e.g., "Claim spot for Rahul") or join as a new participant.
+- **Protection of Claimed Slots:** Claimed slots display the joined member's avatar and first name with a `✓ Joined` badge and cannot be deleted. Unclaimed placeholders can be removed by the host.
 
-### 5. 📋 Copy Expenses — Plain-Text Export
+### 5. 🧾 Expense Creation Wizard & Subitem Categories
+- **"Do you have subitems? ☑" Checkbox:**
+  - **Unchecked (Standalone Expense):** Quick entry with description, amount, calendar date picker (`YYYY-MM-DD`), payer, split mode, and participants.
+  - **Checked (Category with Subitems):** Step 1 prompts for Category Name -> Step 2 allows staging multiple subitems with dynamic total computation.
+- **Collaborative Editing:** All event members can add, edit, or delete expenses, items, subitems, and settlements.
+- **Audit Logging:** Every modification records timestamps, actor, and captures `previousValues` and `newValues`.
+- **First Name Display:** User names are cleanly rendered using their first names throughout the entire app (e.g. "Krishnendu", "Rahul", "Priya").
+
+### 6. 📋 Copy Expenses — Plain-Text Export
 - Prominent **"Copy Expenses"** button on event details.
-- Formats complete event summary with the **Event Invitation Link placed FIRST at the very top**, followed by dates, timestamps, categorized and standalone items, subitems, payers, splits, settlements, and total expense.
-- Integrated with Clipboard API and mobile Web Share API.
+- Formats complete event summary with the clean **Event Invitation Link placed FIRST at the very top**, followed by dates, timestamps, categorized and standalone items, subitems, payers, splits, settlements, and total expense.
+- Integrated with Clipboard API.
 
-### 6. 🚪 Event Deletion & Leaving
-- **Event Deletion (Host Only):** Confirmation modal with soft-deletion and immediate archive removal.
-- **Leaving an Event (Members):** Members can leave an event. If an unsettled balance exists, a clear warning is displayed to settle debts before proceeding. Past ledger records remain intact.
+### 7. 🚪 Event Deletion & Voluntary Leaving
+- **Event Deletion (Host Only):** Soft-deletion confirmation modal with immediate removal.
+- **Voluntary Leave (Members):** Members can leave an event voluntarily. Hosts cannot kick members. If an unsettled balance exists, a clear warning is displayed. On leaving, the member's claimed person slot is automatically released.
+
+### 8. 🏷️ Splitify Handle Renaming
+- Users can update their `@handle` in Profile/Settings.
+- Atomic Firestore transaction enforces case-insensitive uniqueness in `usernames/{handle.toLowerCase()}` and cleans up the previous handle.
 
 ### 7. ⚖️ Flexible & Exact Splitting
 - **Equal Split (Default):** Divides cost equally among selected participants or slots with deterministic integer minor-unit rounding (zero remainder loss).

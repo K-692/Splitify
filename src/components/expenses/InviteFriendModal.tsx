@@ -52,12 +52,11 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
     return () => unsub();
   }, [isOpen, event.id, currentUser]);
 
-  const appBaseUrl = window?.location?.origin
-    ? `${window.location.origin}${window.location.pathname}`
-    : 'https://k-692.github.io/Splitify/';
+  const origin = window?.location?.origin || 'https://k-692.github.io';
+  const cleanBase = `${origin}/Splitify`;
   const inviteUrl = invitationLink
-    ? `${appBaseUrl}#/join/${invitationLink.token}`
-    : `${appBaseUrl}#/events/${event.id}`;
+    ? `${cleanBase}/join/${invitationLink.token}`
+    : `${cleanBase}/events/${event.id}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(inviteUrl);

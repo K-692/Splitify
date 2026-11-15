@@ -13,4 +13,18 @@ describe('Audit Timestamp Formatting', () => {
     const formatted2 = formatAuditTimestamp(testDate2);
     expect(formatted2).toBe('09:05 AM 05:01:2026');
   });
+
+  it('should format date-only calendar strings cleanly without timezone shifts', async () => {
+    const { getTodayLocalDateString, formatDisplayExpenseDate, isValidDateString } = await import(
+      '../src/utils/date'
+    );
+    const testDate = new Date(2026, 10, 15);
+    expect(getTodayLocalDateString(testDate)).toBe('2026-11-15');
+
+    expect(isValidDateString('2026-11-15')).toBe(true);
+    expect(isValidDateString('invalid')).toBe(false);
+
+    expect(formatDisplayExpenseDate('2026-11-15')).toBe('15 Nov 2026');
+    expect(formatDisplayExpenseDate('2026-01-05')).toBe('5 Jan 2026');
+  });
 });

@@ -6,13 +6,28 @@ import { getEmojiForName } from '@/utils/emoji';
 import { toMinorUnits, formatCurrency } from '@/utils/currency';
 import { calculateEqualShares, validateAmountShares } from '@/domain/calculations/finance';
 import { Avatar } from '@/components/common/Avatar';
-import { Check, AlertCircle, Layers } from 'lucide-react';
+import { getFirstName } from '@/utils/name';
+import { getTodayLocalDateString } from '@/utils/date';
+import { Check, AlertCircle, Calendar, Plus, Trash2, ArrowRight } from 'lucide-react';
+
+export interface StagedSubitem {
+  id: string;
+  name: string;
+  emoji: string;
+  costMinor: number;
+  paidBy: string;
+  splitBy: SplitMode;
+  participants: string[];
+  customShares?: Record<string, number>;
+  comment?: string;
+  expenseDate: string;
+}
 
 interface ExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
   event: SplitifyEvent;
-  itemId?: string;
+  itemId?: string | null;
   currentUser: UserProfile;
   initialExpense?: ExpenseEntry | null;
   initialItem?: EventItem | null;
@@ -25,22 +40,49 @@ interface ExpenseModalProps {
     participants: string[];
     customShares?: Record<string, number>;
     comment?: string;
+    expenseDate?: string;
   }) => Promise<void>;
+  onSaveCategoryWithSubitems?: (
+    categoryName: string,
+    subitems: Array<{
+      name: string;
+      costMinor: number;
+      paidBy: string;
+      splitBy: SplitMode;
+      participants: string[];
+      customShares?: Record<string, number>;
+      comment?: string;
+      expenseDate?: string;
+    }>
+  ) => Promise<void>;
 }
 
 export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   isOpen,
   onClose,
   event,
-  itemId: _itemId,
+  itemId,
   currentUser,
   initialExpense,
   initialItem,
   title,
   onSave,
+  onSaveCategoryWithSubitems,
 }) => {
+  const memberList = Object.values(event.members || {});
+  const isEditing = Boolean(initialExpense || initialItem);
+
+  // Top checkbox: "Do you have subitems? ☑"
+  const [hasSubitems, setHasSubitems] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2>(1);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryEmoji, setCategoryEmoji] = useState('📁');
+  const [stagedSubitems, setStagedSubitems] = useState<StagedSubitem[]>([]);
+
+  // Subitem / Standalone expense fields
   const [name, setName] = useState('');
   const [costInput, setCostInput] = useState('');
+  const [expenseDate, setExpenseDate] = useState(getTodayLocalDateString());
   const [paidBy, setPaidBy] = useState(currentUser.uid);
   const [splitBy, setSplitBy] = useState<SplitMode>('equal');
   const [participants, setParticipants] = useState<string[]>([]);
@@ -50,17 +92,25 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const memberList = Object.values(event.members);
-
   useEffect(() => {
+    if (!isOpen) return;
+
+    setError(null);
+    setWizardStep(1);
+    setStagedSubitems([]);
+
     const source = initialExpense || initialItem;
     if (source) {
+      setHasSubitems(false);
       setName(source.name);
       setEmoji(source.emoji);
       setCostInput(((source.costMinor || 0) / 100).toString());
+      setExpenseDate(source.expenseDate || getTodayLocalDateString());
       setPaidBy(source.paidBy || currentUser.uid);
       setSplitBy(source.splitBy || 'equal');
-      setParticipants(source.participants || memberList.map((m) => m.uid));
+      setParticipants(source.participants && source.participants.length > 0
+        ? source.participants
+        : memberList.map((m) => m.uid));
       setComment(source.comment || '');
 
       const initialShares: Record<string, string> = {};
@@ -71,9 +121,13 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       }
       setCustomSharesInput(initialShares);
     } else {
+      setHasSubitems(false);
       setName('');
+      setCategoryName('');
+      setCategoryEmoji('📁');
       setEmoji('📌');
       setCostInput('');
+      setExpenseDate(getTodayLocalDateString());
       setPaidBy(currentUser.uid);
       setSplitBy('equal');
       const allUids = memberList.map((m) => m.uid);
@@ -81,13 +135,17 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setCustomSharesInput({});
       setComment('');
     }
-    setError(null);
   }, [isOpen, initialExpense, initialItem, currentUser.uid]);
 
   // Update emoji on name change
   const handleNameChange = (val: string) => {
     setName(val);
     setEmoji(getEmojiForName(val));
+  };
+
+  const handleCategoryNameChange = (val: string) => {
+    setCategoryName(val);
+    setCategoryEmoji(getEmojiForName(val));
   };
 
   const toggleParticipant = (uid: string) => {
@@ -108,13 +166,121 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   for (const uid of participants) {
     customSharesMinor[uid] = toMinorUnits(customSharesInput[uid] || '0');
   }
-
   const amountValidation = validateAmountShares(costMinor, customSharesMinor, participants);
+
+  // Stage a subitem into the category wizard
+  const handleStageSubitem = () => {
+    setError(null);
+    if (!name.trim()) {
+      setError('Please enter a subitem name.');
+      return false;
+    }
+    if (costMinor <= 0) {
+      setError('Please enter a valid amount greater than 0.');
+      return false;
+    }
+    if (participants.length === 0) {
+      setError('Please select at least one participant.');
+      return false;
+    }
+    if (splitBy === 'amount' && !amountValidation.isValid) {
+      setError('Custom shares sum must equal total subitem cost.');
+      return false;
+    }
+
+    const newSub: StagedSubitem = {
+      id: 'staged_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      name: name.trim(),
+      emoji,
+      costMinor,
+      paidBy,
+      splitBy,
+      participants,
+      customShares: splitBy === 'amount' ? customSharesMinor : undefined,
+      comment: comment.trim(),
+      expenseDate,
+    };
+
+    setStagedSubitems((prev) => [...prev, newSub]);
+
+    // Reset fields for the next subitem
+    setName('');
+    setCostInput('');
+    setEmoji('📌');
+    setComment('');
+    setSplitBy('equal');
+    setCustomSharesInput({});
+    return true;
+  };
+
+  const handleRemoveStagedSubitem = (id: string) => {
+    setStagedSubitems((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  // Compute category total from staged items + current input if filled
+  const totalCategoryCostMinor = stagedSubitems.reduce((sum, s) => sum + s.costMinor, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
+    // If Category flow
+    if (hasSubitems && !isEditing) {
+      if (wizardStep === 1) {
+        if (!categoryName.trim()) {
+          setError('Please enter a category name.');
+          return;
+        }
+        setWizardStep(2);
+        return;
+      }
+
+      // In step 2: if current input fields have a subitem, try staging it
+      let finalSubs = [...stagedSubitems];
+      if (name.trim() && costMinor > 0) {
+        if (splitBy === 'amount' && !amountValidation.isValid) {
+          setError('Custom shares sum must equal total subitem cost.');
+          return;
+        }
+        finalSubs.push({
+          id: 'staged_' + Date.now(),
+          name: name.trim(),
+          emoji,
+          costMinor,
+          paidBy,
+          splitBy,
+          participants,
+          customShares: splitBy === 'amount' ? customSharesMinor : undefined,
+          comment: comment.trim(),
+          expenseDate,
+        });
+      }
+
+      if (finalSubs.length === 0) {
+        setError('Please add at least one subitem to this category.');
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        if (onSaveCategoryWithSubitems) {
+          await onSaveCategoryWithSubitems(categoryName.trim(), finalSubs);
+        } else {
+          // Fallback if not supplied
+          for (const sub of finalSubs) {
+            await onSave({ ...sub });
+          }
+        }
+        onClose();
+      } catch (err: any) {
+        setError(err.message || 'Failed to save category');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // Standalone expense flow
     if (!name.trim()) {
       setError('Please enter an expense name.');
       return;
@@ -150,6 +316,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
         participants,
         customShares: splitBy === 'amount' ? customSharesMinor : undefined,
         comment: comment.trim(),
+        expenseDate,
       });
       onClose();
     } catch (err: any) {
@@ -159,15 +326,57 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     }
   };
 
+  const modalTitle = isEditing
+    ? initialExpense
+      ? 'Edit Subitem'
+      : 'Edit Expense'
+    : hasSubitems
+    ? wizardStep === 1
+      ? 'New Category'
+      : `Add Subitems to "${categoryName}"`
+    : itemId
+    ? 'Add Subitem'
+    : 'Add Expense';
+
+  const modalEmoji = hasSubitems
+    ? wizardStep === 1
+      ? categoryEmoji
+      : '📂'
+    : emoji;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={title || (initialExpense || initialItem ? 'Edit Expense' : 'Add Expense')}
-      emoji={emoji}
+      title={title || modalTitle}
+      emoji={modalEmoji}
       maxWidth="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Top Checkbox: Do you have subitems? (Shown only on fresh Add Expense) */}
+        {!isEditing && !itemId && wizardStep === 1 && (
+          <div className="p-3.5 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                id="hasSubitemsCheckbox"
+                checked={hasSubitems}
+                onChange={(e) => setHasSubitems(e.target.checked)}
+                className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500 cursor-pointer"
+              />
+              <label
+                htmlFor="hasSubitemsCheckbox"
+                className="text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer select-none"
+              >
+                Do you have subitems?
+              </label>
+            </div>
+            <span className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">
+              {hasSubitems ? 'Category Mode' : 'Standalone Mode'}
+            </span>
+          </div>
+        )}
+
         {error && (
           <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -175,287 +384,379 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           </div>
         )}
 
-        {/* Expense Name & Cost */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Expense Name
-            </label>
-            <div className="relative flex items-center">
-              <span className="absolute left-3 text-lg select-none">{emoji}</span>
-              <input
-                type="text"
-                placeholder="e.g. Flight Tickets, Dinner, Hotel"
-                value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                required
-                className="w-full pl-10 pr-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
-              />
+        {/* STEP 1 OF CATEGORY WIZARD: Enter Category Name */}
+        {hasSubitems && !isEditing && wizardStep === 1 ? (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Category Name
+              </label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-lg select-none">{categoryEmoji}</span>
+                <input
+                  type="text"
+                  placeholder="e.g. Food & Drinks, Hotel Stay, Flight & Transit"
+                  value={categoryName}
+                  onChange={(e) => handleCategoryNameChange(e.target.value)}
+                  required
+                  autoFocus
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                />
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 block">
+                Total category cost will calculate dynamically as you add individual subitems.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <Button type="button" variant="ghost" size="md" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md">
+                Continue to Subitems
+                <ArrowRight className="w-4 h-4 ml-1.5" />
+              </Button>
             </div>
           </div>
+        ) : (
+          /* STANDALONE EXPENSE OR STEP 2 OF CATEGORY WIZARD */
+          <>
+            {/* If in Category Step 2, show header banner with Category Total */}
+            {hasSubitems && !isEditing && wizardStep === 2 && (
+              <div className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{categoryEmoji}</span>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {categoryName}
+                    </h4>
+                    <span className="text-[10px] text-slate-400">
+                      {stagedSubitems.length} subitem(s) staged
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category Total:</span>
+                  <span className="text-sm font-black text-teal-600 dark:text-teal-400">
+                    {formatCurrency(totalCategoryCostMinor + costMinor, event.currency)}
+                  </span>
+                </div>
+              </div>
+            )}
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Amount ({event.currency})
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0.00"
-              value={costInput}
-              onChange={(e) => setCostInput(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
-            />
-          </div>
-        </div>
+            {/* List of staged subitems in Category Mode */}
+            {hasSubitems && stagedSubitems.length > 0 && (
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {stagedSubitems.map((sub, idx) => (
+                  <div
+                    key={sub.id || idx}
+                    className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-700 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span>{sub.emoji}</span>
+                      <span className="font-bold text-slate-900 dark:text-white truncate">
+                        {sub.name}
+                      </span>
+                      <span className="text-[10px] text-slate-400">({sub.expenseDate})</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="font-black text-slate-800 dark:text-slate-200">
+                        {formatCurrency(sub.costMinor, event.currency)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveStagedSubitem(sub.id)}
+                        className="text-slate-400 hover:text-rose-500 p-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-        {/* Paid By */}
-        <div>
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-            Paid by
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {memberList.map((member) => (
-              <button
-                key={member.uid}
-                type="button"
-                onClick={() => setPaidBy(member.uid)}
-                className={`flex items-center gap-2 p-2 rounded-2xl border text-left transition-all ${
-                  paidBy === member.uid
-                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750'
-                }`}
-              >
-                <Avatar src={member.photoURL} name={member.displayName} size="xs" />
-                <span className="text-xs font-bold truncate">
-                  {member.displayName} {member.uid === currentUser.uid ? '(You)' : ''}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+            {/* Subitem / Expense Name, Cost, and Calendar Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  {hasSubitems ? 'Subitem Name' : 'Expense Name'}
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 text-lg select-none">{emoji}</span>
+                  <input
+                    type="text"
+                    placeholder={hasSubitems ? 'e.g. Pizza & Drinks, Hotel Night 1' : 'e.g. Flight Tickets, Dinner, Hotel'}
+                    value={name}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    required
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  />
+                </div>
+              </div>
 
-        {/* Split By Tabs: Equal or Amount */}
-        <div>
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-            Split Mode
-          </label>
-          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
-            <button
-              type="button"
-              onClick={() => setSplitBy('equal')}
-              className={`py-2 rounded-xl font-bold text-xs transition-all ${
-                splitBy === 'equal'
-                  ? 'bg-white dark:bg-[#15263C] text-teal-600 dark:text-teal-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              Split Equally (Default)
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitBy('amount')}
-              className={`py-2 rounded-xl font-bold text-xs transition-all ${
-                splitBy === 'amount'
-                  ? 'bg-white dark:bg-[#15263C] text-teal-600 dark:text-teal-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              Exact Amounts
-            </button>
-          </div>
-        </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Amount ({event.currency})
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="0.00"
+                  value={costInput}
+                  onChange={(e) => setCostInput(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                />
+              </div>
 
-        {/* Participants Selection & Amount Allocation */}
-        <div className="space-y-2">
-          {/* Quick Slot Selection Pills */}
-          {event.slots && Object.keys(event.slots).length > 0 && (
-            <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                <Layers className="w-3 h-3 text-teal-500" />
-                Select By Group Slot:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {Object.values(event.slots).map((slot) => {
-                  const slotUids = slot.assignedMemberUids || [];
-                  if (slotUids.length === 0) return null;
-                  const allSelected = slotUids.every((uid) => participants.includes(uid));
-
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      onClick={() => {
-                        if (allSelected) {
-                          const remaining = participants.filter((uid) => !slotUids.includes(uid));
-                          setParticipants(remaining.length > 0 ? remaining : [currentUser.uid]);
-                        } else {
-                          const merged = Array.from(new Set([...participants, ...slotUids]));
-                          setParticipants(merged);
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-all flex items-center gap-1 ${
-                        allSelected
-                          ? 'bg-teal-500/15 border-teal-500/40 text-teal-700 dark:text-teal-300'
-                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-teal-500/30'
-                      }`}
-                    >
-                      <span>{slot.name}</span>
-                      <span className="text-[10px] opacity-70">({slotUids.length})</span>
-                    </button>
-                  );
-                })}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-teal-500" />
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                />
               </div>
             </div>
-          )}
 
-          <div className="flex items-center justify-between pt-1">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              Participants ({participants.length}/{memberList.length})
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                if (participants.length === memberList.length) {
-                  setParticipants([currentUser.uid]);
-                } else {
-                  setParticipants(memberList.map((m) => m.uid));
-                }
-              }}
-              className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
-            >
-              {participants.length === memberList.length ? 'Deselect All' : 'Select All'}
-            </button>
-          </div>
-
-          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            {memberList.map((member) => {
-              const isSelected = participants.includes(member.uid);
-              const equalShareMinor = isSelected && costMinor > 0
-                ? calculateEqualShares(costMinor, participants)[member.uid] || 0
-                : 0;
-
-              return (
-                <div
-                  key={member.uid}
-                  className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
-                    isSelected
-                      ? 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
-                      : 'border-slate-100 dark:border-slate-800/60 opacity-60 bg-slate-50 dark:bg-slate-850'
-                  }`}
-                >
+            {/* Paid By (First Names) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Paid by
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {memberList.map((member) => (
                   <button
+                    key={member.uid}
                     type="button"
-                    onClick={() => toggleParticipant(member.uid)}
-                    className="flex items-center gap-2.5 flex-1 text-left"
+                    onClick={() => setPaidBy(member.uid)}
+                    className={`flex items-center gap-2 p-2 rounded-2xl border text-left transition-all ${
+                      paidBy === member.uid
+                        ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750'
+                    }`}
                   >
-                    <div
-                      className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
-                        isSelected
-                          ? 'bg-teal-500 border-teal-500 text-white'
-                          : 'border-slate-300 dark:border-slate-600'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    </div>
-                    <Avatar src={member.photoURL} name={member.displayName} size="xs" />
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                      {member.displayName}
+                    <Avatar src={member.photoURL} name={getFirstName(member.displayName)} size="xs" />
+                    <span className="text-xs font-bold truncate">
+                      {getFirstName(member.displayName)} {member.uid === currentUser.uid ? '(You)' : ''}
                     </span>
                   </button>
+                ))}
+              </div>
+            </div>
 
-                  {/* Share indicator or editable input */}
-                  {isSelected && (
-                    <div className="flex-shrink-0 ml-2">
-                      {splitBy === 'equal' ? (
-                        <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-xl">
-                          {formatCurrency(equalShareMinor, event.currency)}
+            {/* Split Mode */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Split Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setSplitBy('equal')}
+                  className={`py-2 rounded-xl font-bold text-xs transition-all ${
+                    splitBy === 'equal'
+                      ? 'bg-white dark:bg-[#15263C] text-teal-600 dark:text-teal-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  Split Equally (Default)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitBy('amount')}
+                  className={`py-2 rounded-xl font-bold text-xs transition-all ${
+                    splitBy === 'amount'
+                      ? 'bg-white dark:bg-[#15263C] text-teal-600 dark:text-teal-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  Exact Amounts
+                </button>
+              </div>
+            </div>
+
+            {/* Participants Selection (First names) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between pt-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Participants ({participants.length}/{memberList.length})
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (participants.length === memberList.length) {
+                      setParticipants([currentUser.uid]);
+                    } else {
+                      setParticipants(memberList.map((m) => m.uid));
+                    }
+                  }}
+                  className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
+                >
+                  {participants.length === memberList.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {memberList.map((member) => {
+                  const isSelected = participants.includes(member.uid);
+                  const equalShareMinor = isSelected && costMinor > 0
+                    ? calculateEqualShares(costMinor, participants)[member.uid] || 0
+                    : 0;
+
+                  return (
+                    <div
+                      key={member.uid}
+                      className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
+                        isSelected
+                          ? 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                          : 'border-slate-100 dark:border-slate-800/60 opacity-60 bg-slate-50 dark:bg-slate-850'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleParticipant(member.uid)}
+                        className="flex items-center gap-2.5 flex-1 text-left"
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
+                            isSelected
+                              ? 'bg-teal-500 border-teal-500 text-white'
+                              : 'border-slate-300 dark:border-slate-600'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                        <Avatar src={member.photoURL} name={getFirstName(member.displayName)} size="xs" />
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                          {getFirstName(member.displayName)}
                         </span>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold text-slate-400">
-                            {event.currency === 'INR' ? '₹' : '$'}
-                          </span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={customSharesInput[member.uid] || ''}
-                            onChange={(e) =>
-                              setCustomSharesInput({
-                                ...customSharesInput,
-                                [member.uid]: e.target.value,
-                              })
-                            }
-                            className="w-20 px-2 py-1 text-right text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500"
-                          />
+                      </button>
+
+                      {/* Share indicator or editable input */}
+                      {isSelected && (
+                        <div className="flex-shrink-0 ml-2">
+                          {splitBy === 'equal' ? (
+                            <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-xl">
+                              {formatCurrency(equalShareMinor, event.currency)}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-bold text-slate-400">
+                                {event.currency === 'INR' ? '₹' : '$'}
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="0.00"
+                                value={customSharesInput[member.uid] || ''}
+                                onChange={(e) =>
+                                  setCustomSharesInput({
+                                    ...customSharesInput,
+                                    [member.uid]: e.target.value,
+                                  })
+                                }
+                                className="w-20 px-2 py-1 text-right text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
 
-          {/* Amount Split Validation status */}
-          {splitBy === 'amount' && (
-            <div
-              className={`p-2 rounded-xl text-xs font-bold flex items-center justify-between ${
-                amountValidation.isValid
-                  ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
-                  : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
-              }`}
-            >
-              <span>Total allocated:</span>
-              <span>
-                {formatCurrency(
-                  Object.values(customSharesMinor).reduce((a, b) => a + b, 0),
-                  event.currency
-                )}{' '}
-                / {formatCurrency(costMinor, event.currency)}
-                {!amountValidation.isValid && (
-                  <span className="ml-1.5 underline">
-                    ({amountValidation.differenceMinor > 0 ? 'Remaining: ' : 'Over: '}
-                    {formatCurrency(Math.abs(amountValidation.differenceMinor), event.currency)})
+              {/* Amount Split Validation status */}
+              {splitBy === 'amount' && (
+                <div
+                  className={`p-2 rounded-xl text-xs font-bold flex items-center justify-between ${
+                    amountValidation.isValid
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                  }`}
+                >
+                  <span>Total allocated:</span>
+                  <span>
+                    {formatCurrency(
+                      Object.values(customSharesMinor).reduce((a, b) => a + b, 0),
+                      event.currency
+                    )}{' '}
+                    / {formatCurrency(costMinor, event.currency)}
+                    {!amountValidation.isValid && (
+                      <span className="ml-1.5 underline">
+                        ({amountValidation.differenceMinor > 0 ? 'Remaining: ' : 'Over: '}
+                        {formatCurrency(Math.abs(amountValidation.differenceMinor), event.currency)})
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Optional Comment */}
-        <div>
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-            Optional Note / Comment
-          </label>
-          <input
-            type="text"
-            placeholder="Add details, booking reference, receipt note..."
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            className="w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-teal-500 focus:outline-none"
-          />
-        </div>
+            {/* Optional Comment */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Optional Note / Comment
+              </label>
+              <input
+                type="text"
+                placeholder="Add details, receipt note..."
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="w-full px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              />
+            </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <Button type="button" variant="ghost" size="md" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            size="md"
-            isLoading={isSubmitting}
-            disabled={splitBy === 'amount' && !amountValidation.isValid}
-          >
-            {initialExpense ? 'Save Changes' : 'Add Expense'}
-          </Button>
-        </div>
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+              {hasSubitems && !isEditing ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleStageSubitem}
+                    className="text-teal-600 dark:text-teal-400 font-bold"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Add Another Subitem
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="ghost" size="md" onClick={onClose}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" variant="primary" size="md" isLoading={isSubmitting}>
+                      Save Category & Subitems
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-end gap-2 w-full">
+                  <Button type="button" variant="ghost" size="md" onClick={onClose}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                    isLoading={isSubmitting}
+                    disabled={splitBy === 'amount' && !amountValidation.isValid}
+                  >
+                    {isEditing ? 'Save Changes' : 'Add Expense'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </form>
     </Modal>
   );
