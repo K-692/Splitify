@@ -481,29 +481,10 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!event || !user) {
-    return (
-      <div className="text-center py-16">
-        <h2 className="text-xl font-bold">Event not found</h2>
-        <Button variant="primary" className="mt-4" onClick={() => navigate('/')}>
-          Back to Home
-        </Button>
-      </div>
-    );
-  }
-
-  const currency = event.currency || 'INR';
-  const isHost = event.hostUid === user.uid;
-  const activeItems = items.filter((i) => !i.deleted);
-  const slotsCount = Object.keys(event.slots || {}).length;
+  const currency = event?.currency || 'INR';
+  const isHost = Boolean(event && user && event.hostUid === user.uid);
+  const activeItems = useMemo(() => items.filter((i) => !i.deleted), [items]);
+  const slotsCount = event?.slots ? Object.keys(event.slots).length : 0;
 
   const { debtsOwedToCurrentUser, userOwesMember } = useMemo(() => {
     const owed: Record<string, number> = {};
@@ -588,6 +569,25 @@ export const EventDetailsPage: React.FC = () => {
 
     return { displayedItems: filtered, matchingSubitemIdsByItem: matchingIds };
   }, [activeItems, normalizedSearchQuery, expensesByItem, event]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!event || !user) {
+    return (
+      <div className="text-center py-16">
+        <h2 className="text-xl font-bold">Event not found</h2>
+        <Button variant="primary" className="mt-4" onClick={() => navigate('/')}>
+          Back to Home
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12 max-w-5xl mx-auto">

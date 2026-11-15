@@ -9,6 +9,11 @@
 </p>
 
 <p align="center">
+  🌐 <strong>Live Application URL:</strong> <a href="https://k-692.github.io/Splitify/"><strong>https://k-692.github.io/Splitify/</strong></a>
+</p>
+
+<p align="center">
+  <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Live_App-k--692.github.io%2FSplitify-16AA88?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Live App" /></a>
   <img src="https://img.shields.io/badge/Release-v1.0.0-16AA88?style=for-the-badge" alt="Release" />
   <img src="https://img.shields.io/badge/React-19-203D62?style=for-the-badge&logo=react" alt="React 19" />
   <img src="https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />

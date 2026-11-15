@@ -687,15 +687,9 @@ service cloud.firestore {
 
     // 7. Events & Subcollections
     match /events/{eventId} {
-      // Read allowed if user is a member/host of the event, or if event has a join code,
-      // or if authenticated user is reading an active event document to view slots / join
-      allow read: if isAuthenticated() &&
-                     (
-                       request.auth.uid in resource.data.members ||
-                       request.auth.uid == resource.data.hostUid ||
-                       resource.data.joinCode != null ||
-                       (!('deleted' in resource.data) || resource.data.deleted == false)
-                     );
+      // Authenticated users can read event documents (metadata & slots)
+      // Subcollections (items, expenses, settlements) require isEventMember()
+      allow read: if isAuthenticated();
 
       // Host creates event and must include themselves in members map
       allow create: if isAuthenticated() &&

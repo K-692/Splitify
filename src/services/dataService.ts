@@ -90,16 +90,22 @@ export const dataService = {
     }
 
     const q = query(collection(db, 'events'));
-    return onSnapshot(q, (snapshot) => {
-      const events: SplitifyEvent[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data() as SplitifyEvent;
-        if (data.members && data.members[userId] && !data.deleted) {
-          events.push({ ...data, id: doc.id });
-        }
-      });
-      callback(events);
-    });
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const events: SplitifyEvent[] = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data() as SplitifyEvent;
+          if (data.members && data.members[userId] && !data.deleted) {
+            events.push({ ...data, id: doc.id });
+          }
+        });
+        callback(events);
+      },
+      (error) => {
+        console.error('subscribeEvents error:', error);
+      }
+    );
   },
 
   async createEvent(
@@ -225,13 +231,20 @@ export const dataService = {
       return () => window.removeEventListener('splitify_data_changed', handler);
     }
 
-    return onSnapshot(doc(db, 'events', eventId), (snap) => {
-      if (!snap.exists()) {
+    return onSnapshot(
+      doc(db, 'events', eventId),
+      (snap) => {
+        if (!snap.exists()) {
+          callback(null);
+          return;
+        }
+        callback({ ...snap.data(), id: snap.id } as SplitifyEvent);
+      },
+      (error) => {
+        console.error(`subscribeEvent error for ${eventId}:`, error);
         callback(null);
-        return;
       }
-      callback({ ...snap.data(), id: snap.id } as SplitifyEvent);
-    });
+    );
   },
 
   async deleteEvent(eventId: string, user: UserProfile): Promise<void> {
@@ -351,14 +364,21 @@ export const dataService = {
     }
 
     const q = query(collection(db, 'events', eventId, 'items'), orderBy('createdAt', 'asc'));
-    return onSnapshot(q, (snapshot) => {
-      const items: EventItem[] = [];
-      snapshot.forEach((d) => {
-        const item = { ...d.data(), id: d.id } as EventItem;
-        if (!item.deleted) items.push(item);
-      });
-      callback(items);
-    });
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const items: EventItem[] = [];
+        snapshot.forEach((d) => {
+          const item = { ...d.data(), id: d.id } as EventItem;
+          if (!item.deleted) items.push(item);
+        });
+        callback(items);
+      },
+      (error) => {
+        console.error(`subscribeItems error for ${eventId}:`, error);
+        callback([]);
+      }
+    );
   },
 
   async createItem(eventId: string, name: string): Promise<string> {
@@ -926,14 +946,21 @@ export const dataService = {
       collection(db, 'events', eventId, 'expenses'),
       orderBy('createdAt', 'desc')
     );
-    return onSnapshot(q, (snapshot) => {
-      const expenses: ExpenseEntry[] = [];
-      snapshot.forEach((d) => {
-        const exp = { ...d.data(), id: d.id } as ExpenseEntry;
-        if (!exp.deleted) expenses.push(exp);
-      });
-      callback(expenses);
-    });
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const expenses: ExpenseEntry[] = [];
+        snapshot.forEach((d) => {
+          const exp = { ...d.data(), id: d.id } as ExpenseEntry;
+          if (!exp.deleted) expenses.push(exp);
+        });
+        callback(expenses);
+      },
+      (error) => {
+        console.error(`subscribeExpenses error for ${eventId}:`, error);
+        callback([]);
+      }
+    );
   },
 
   async createExpense(
@@ -1304,13 +1331,20 @@ export const dataService = {
       collection(db, 'events', eventId, 'settlements'),
       orderBy('createdAt', 'desc')
     );
-    return onSnapshot(q, (snapshot) => {
-      const settlements: SettlementEntry[] = [];
-      snapshot.forEach((d) => {
-        settlements.push({ ...d.data(), id: d.id } as SettlementEntry);
-      });
-      callback(settlements);
-    });
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const settlements: SettlementEntry[] = [];
+        snapshot.forEach((d) => {
+          settlements.push({ ...d.data(), id: d.id } as SettlementEntry);
+        });
+        callback(settlements);
+      },
+      (error) => {
+        console.error(`subscribeSettlements error for ${eventId}:`, error);
+        callback([]);
+      }
+    );
   },
 
   async recordSettlement(
