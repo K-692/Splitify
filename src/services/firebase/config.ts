@@ -12,12 +12,12 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAj7AHMZrfiCp7PBfZYQ9bZF1UEPtgq0AM',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'splitify-151bd.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'splitify-151bd',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'splitify-151bd.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'splitify-151bd.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '268134159684',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:268134159684:web:c93629b97bf18462907311',
 };
 
 export const isFirebaseConfigured = (): boolean => {
