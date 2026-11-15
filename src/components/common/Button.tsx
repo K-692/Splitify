@@ -52,10 +52,12 @@ export const Button: React.FC<ButtonProps> = ({
       {isLoading ? (
         <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
       ) : (
-        leftIcon && <span className="flex-shrink-0">{leftIcon}</span>
+        leftIcon && <span className="flex-shrink-0 inline-flex items-center">{leftIcon}</span>
       )}
-      <span>{children}</span>
-      {!isLoading && rightIcon && <span className="flex-shrink-0">{rightIcon}</span>}
+      <span className="inline-flex items-center">{children}</span>
+      {!isLoading && rightIcon && (
+        <span className="flex-shrink-0 inline-flex items-center">{rightIcon}</span>
+      )}
     </button>
   );
 };

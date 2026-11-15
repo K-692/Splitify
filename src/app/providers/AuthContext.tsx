@@ -8,7 +8,6 @@ interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
-  signInWithDemoPersona: (persona: 'krish' | 'rahul' | 'priya') => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   isFirebaseConnected: boolean;
@@ -41,16 +40,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signInWithDemoPersona = async (persona: 'krish' | 'rahul' | 'priya') => {
-    setLoading(true);
-    try {
-      const profile = await authService.signInWithDemoPersona(persona);
-      setUser(profile);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const signOut = async () => {
     await authService.signOut();
     setUser(null);
@@ -68,7 +57,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         signInWithGoogle,
-        signInWithDemoPersona,
         signOut,
         updateProfile,
         isFirebaseConnected,
