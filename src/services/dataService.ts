@@ -2091,7 +2091,8 @@ export const dataService = {
   async joinEventByInvitationToken(
     token: string,
     user: UserProfile,
-    slotId?: string
+    slotId?: string,
+    newSlotName?: string
   ): Promise<{ event: SplitifyEvent; link: EventInvitationLink }> {
     const link = await dataService.getInvitationLinkByToken(token);
     if (!link) throw new Error('Invalid or non-existent invitation link.');
@@ -2110,19 +2111,10 @@ export const dataService = {
 
     const userFirstName = getFirstName(user.displayName);
     const existingMember = event.members[user.uid];
-    const memberEntry: EventMember = {
-      uid: user.uid,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
-      username: user.username,
-      joinedAt: existingMember ? existingMember.joinedAt : Date.now(),
-      role: existingMember ? existingMember.role : 'member',
-      scope: link.scope,
-      allowedItemIds: link.allowedItemIds || [],
-      slotId: slotId || existingMember?.slotId,
-    };
 
     const slots = { ...(event.slots || {}) };
+    let assignedSlotId = slotId;
+
     if (slotId && slots[slotId]) {
       const slot = slots[slotId];
       if (slot.isClaimed && slot.claimedByUid !== user.uid) {
@@ -2136,7 +2128,35 @@ export const dataService = {
         claimedAt: Date.now(),
         updatedAt: Date.now(),
       };
+    } else if (newSlotName !== undefined) {
+      // User creates a new slot to join
+      const createdSlotId = 'slot_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const placeholder = newSlotName.trim() || userFirstName;
+      slots[createdSlotId] = {
+        id: createdSlotId,
+        eventId: event.id,
+        placeholderName: placeholder,
+        isClaimed: true,
+        claimedByUid: user.uid,
+        claimedByName: userFirstName,
+        claimedAt: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      assignedSlotId = createdSlotId;
     }
+
+    const memberEntry: EventMember = {
+      uid: user.uid,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+      username: user.username,
+      joinedAt: existingMember ? existingMember.joinedAt : Date.now(),
+      role: existingMember ? existingMember.role : 'member',
+      scope: link.scope,
+      allowedItemIds: link.allowedItemIds || [],
+      slotId: assignedSlotId || existingMember?.slotId,
+    };
 
     if (!isFirebaseConfigured() || !db) {
       event.members[user.uid] = memberEntry;
@@ -2191,6 +2211,8 @@ export const dataService = {
       }
 
       const liveSlots = { ...(liveEvent.slots || {}) };
+      let liveAssignedSlotId = slotId;
+
       if (slotId) {
         const slot = liveSlots[slotId];
         if (!slot) {
@@ -2207,6 +2229,21 @@ export const dataService = {
           claimedAt: Date.now(),
           updatedAt: Date.now(),
         };
+      } else if (newSlotName !== undefined) {
+        const createdSlotId = 'slot_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+        const placeholder = newSlotName.trim() || userFirstName;
+        liveSlots[createdSlotId] = {
+          id: createdSlotId,
+          eventId: liveEvent.id,
+          placeholderName: placeholder,
+          isClaimed: true,
+          claimedByUid: user.uid,
+          claimedByName: userFirstName,
+          claimedAt: Date.now(),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        liveAssignedSlotId = createdSlotId;
       }
 
       const isAlreadyMember = Boolean(liveEvent.members && liveEvent.members[user.uid]);
@@ -2220,7 +2257,7 @@ export const dataService = {
         role: currentMember ? currentMember.role : 'member',
         scope: liveLink.scope,
         allowedItemIds: liveLink.allowedItemIds || [],
-        slotId: slotId || currentMember?.slotId,
+        slotId: liveAssignedSlotId || currentMember?.slotId,
       };
 
       transaction.update(

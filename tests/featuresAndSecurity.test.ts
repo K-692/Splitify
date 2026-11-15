@@ -214,6 +214,30 @@ describe('User Profile UID Lookup, Event Invitations & Slot Claiming', () => {
       expect(joinedEvent.members[friendUser.uid]).toBeDefined();
       expect(joinedEvent.members[friendUser.uid].slotId).toBeUndefined();
     });
+
+    it('should allow creating a new slot when joining an event if no slot to claim', async () => {
+      const eventId = await dataService.createEvent('Dinner Gathering', hostUser);
+      const link = await dataService.createInvitationLink(eventId, hostUser, { scope: 'full' });
+
+      // Rahul joins and creates a new slot named 'Rahul'
+      const { event: joinedEvent } = await dataService.joinEventByInvitationToken(
+        link.token,
+        friendUser,
+        undefined,
+        'Rahul'
+      );
+
+      expect(joinedEvent.members[friendUser.uid]).toBeDefined();
+      const assignedSlotId = joinedEvent.members[friendUser.uid].slotId;
+      expect(assignedSlotId).toBeDefined();
+
+      const createdSlot = joinedEvent.slots?.[assignedSlotId!];
+      expect(createdSlot).toBeDefined();
+      expect(createdSlot?.placeholderName).toBe('Rahul');
+      expect(createdSlot?.isClaimed).toBe(true);
+      expect(createdSlot?.claimedByUid).toBe(friendUser.uid);
+      expect(createdSlot?.claimedByName).toBe('Rahul');
+    });
   });
 
   describe('Debts Owed To Current User & Reminder Isolation', () => {

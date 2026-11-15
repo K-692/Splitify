@@ -1610,6 +1610,83 @@ export const EventDetailsPage: React.FC = () => {
               );
             })}
           </div>
+
+          {/* People & Slots Section */}
+          <div className="pt-5 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-amber-500" />
+                  People & Slots ({Object.keys(event.slots || {}).length})
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Individual participant slots and joined people under this event.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSlotsModalOpen(true)}
+                className="text-xs font-bold"
+              >
+                Manage People
+              </Button>
+            </div>
+
+            {Object.keys(event.slots || {}).length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No individual slots created yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {Object.values(event.slots || {}).map((slot) => {
+                  const claimedMember = slot.claimedByUid ? event.members[slot.claimedByUid] : null;
+                  const displayName = slot.isClaimed
+                    ? claimedMember
+                      ? getFirstName(claimedMember.displayName)
+                      : slot.claimedByName || slot.placeholderName
+                    : slot.placeholderName;
+
+                  return (
+                    <div
+                      key={slot.id}
+                      className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 ${
+                        slot.isClaimed
+                          ? 'border-emerald-200/70 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-950/20'
+                          : 'border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar
+                          src={claimedMember?.photoURL}
+                          name={displayName}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-slate-800 dark:text-white truncate block">
+                            {displayName}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block truncate">
+                            {slot.isClaimed
+                              ? `Claimed "${slot.placeholderName}"`
+                              : `Placeholder: ${slot.placeholderName}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {slot.isClaimed ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                          Joined ✓
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex-shrink-0">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

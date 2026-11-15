@@ -27,7 +27,15 @@ export const JoinPage: React.FC = () => {
   const [event, setEvent] = useState<SplitifyEvent | null>(null);
 
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
+  const [joinMode, setJoinMode] = useState<'claim' | 'new_slot'>('claim');
+  const [customSlotName, setCustomSlotName] = useState<string>('');
   const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    if (user && !customSlotName) {
+      setCustomSlotName(getFirstName(user.displayName));
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!token) {
@@ -144,11 +152,12 @@ export const JoinPage: React.FC = () => {
     if (!token || !user || !event) return;
     setJoining(true);
     try {
-      await dataService.joinEventByInvitationToken(
-        token,
-        user,
-        selectedSlotId ? selectedSlotId : undefined
-      );
+      if (joinMode === 'claim' && selectedSlotId) {
+        await dataService.joinEventByInvitationToken(token, user, selectedSlotId);
+      } else {
+        const slotName = customSlotName.trim() || getFirstName(user.displayName);
+        await dataService.joinEventByInvitationToken(token, user, undefined, slotName);
+      }
       navigate(`/events/${event.id}`);
     } catch (err: any) {
       console.error(err);
@@ -303,7 +312,7 @@ export const JoinPage: React.FC = () => {
         ) : (
           /* User is authenticated and ready to join */
           <div className="space-y-5">
-            {/* Slot Claiming or Join as New Person (Section 5.2) */}
+            {/* Slot Claiming or Create New Slot to Join */}
             <div>
               <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 block">
                 How would you like to join?
@@ -313,12 +322,15 @@ export const JoinPage: React.FC = () => {
                 {slotsList
                   .filter((s) => !s.isClaimed)
                   .map((slot) => {
-                    const isSelected = selectedSlotId === slot.id;
+                    const isSelected = joinMode === 'claim' && selectedSlotId === slot.id;
                     return (
                       <button
                         key={slot.id}
                         type="button"
-                        onClick={() => setSelectedSlotId(slot.id)}
+                        onClick={() => {
+                          setJoinMode('claim');
+                          setSelectedSlotId(slot.id);
+                        }}
                         className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
                           isSelected
                             ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500 shadow-sm'
@@ -327,7 +339,7 @@ export const JoinPage: React.FC = () => {
                       >
                         <div className="flex items-center gap-2.5">
                           <UserCheck className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                          <span>Claim {slot.placeholderName}</span>
+                          <span>Claim spot for {slot.placeholderName}</span>
                         </div>
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-teal-500/15 text-teal-600 dark:text-teal-400">
                           {isSelected ? 'Selected' : 'Claim Slot'}
@@ -338,22 +350,44 @@ export const JoinPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setSelectedSlotId('')}
+                  onClick={() => {
+                    setJoinMode('new_slot');
+                    setSelectedSlotId('');
+                  }}
                   className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
-                    selectedSlotId === ''
+                    joinMode === 'new_slot'
                       ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500 shadow-sm'
                       : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <UserPlus className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                    <span>Join as New Person</span>
+                    <span>Create a New Slot to Join</span>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
-                    {selectedSlotId === '' ? 'Selected' : 'Fresh Member'}
+                    {joinMode === 'new_slot' ? 'Selected' : 'New Slot'}
                   </span>
                 </button>
               </div>
+
+              {/* Slot Name input if creating a new slot */}
+              {joinMode === 'new_slot' && (
+                <div className="mt-3 p-3.5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-2 animate-in fade-in">
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block">
+                    Person / Slot Name for Event:
+                  </label>
+                  <input
+                    type="text"
+                    value={customSlotName}
+                    onChange={(e) => setCustomSlotName(e.target.value)}
+                    placeholder="Enter your name (e.g. Rahul, Priya)..."
+                    className="w-full px-3.5 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                    A dedicated person slot will be created under the event and shown in the event's people list.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Current user confirmation info */}
