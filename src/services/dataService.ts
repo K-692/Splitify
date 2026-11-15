@@ -34,6 +34,7 @@ import { formatAuditTimestamp, getTodayLocalDateString } from '@/utils/date';
 import { calculateEqualShares } from '@/domain/calculations/finance';
 import { sanitizeForFirestore } from '@/utils/firestoreSanitizer';
 import { getFirstName } from '@/utils/name';
+import { generateHandleCandidates } from '@/utils/handleSuggestions';
 
 function generateInvitationToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -1432,7 +1433,85 @@ export const dataService = {
 
     const userSnap = await getDoc(doc(db, 'users', uid));
     if (!userSnap.exists()) return null;
-    return userSnap.data() as UserProfile;
+    return { ...userSnap.data(), uid } as UserProfile;
+  },
+
+  async getUserByUid(uid: string): Promise<UserProfile | null> {
+    if (!uid) return null;
+
+    if (!isFirebaseConfigured() || !db) {
+      const mockUsers: UserProfile[] = [
+        {
+          uid: 'demo_user_krish',
+          displayName: 'Krishnendu Pal',
+          email: 'krish@splitify.app',
+          photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          username: 'krish',
+          createdAt: Date.now(),
+        },
+        {
+          uid: 'demo_user_rahul',
+          displayName: 'Rahul Sharma',
+          email: 'rahul@splitify.app',
+          photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+          username: 'rahul',
+          createdAt: Date.now(),
+        },
+        {
+          uid: 'demo_user_priya',
+          displayName: 'Priya Patel',
+          email: 'priya@splitify.app',
+          photoURL: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+          username: 'priya',
+          createdAt: Date.now(),
+        },
+        {
+          uid: 'demo_user_ananya',
+          displayName: 'Ananya Verma',
+          email: 'ananya@splitify.app',
+          photoURL: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150',
+          username: 'ananya',
+          createdAt: Date.now(),
+        },
+      ];
+      const found = mockUsers.find(
+        (u) => u.uid === uid || u.uid === `demo_user_${uid}` || uid.replace('demo_user_', '') === u.username
+      );
+      if (found) return found;
+
+      const currentUser = getLocal<UserProfile | null>('current_user', null);
+      if (currentUser && (currentUser.uid === uid || currentUser.uid === `demo_user_${uid}`)) {
+        return currentUser;
+      }
+
+      const localUsers = getLocal<UserProfile[]>('mock_users', []);
+      return localUsers.find((u) => u.uid === uid) || null;
+    }
+
+    try {
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      if (!userSnap.exists()) return null;
+      return { ...userSnap.data(), uid } as UserProfile;
+    } catch (err) {
+      console.error(`Error looking up user by uid ${uid}:`, err);
+      return null;
+    }
+  },
+
+  async getUsersByUids(uids: string[]): Promise<Record<string, UserProfile>> {
+    const uniqueUids = Array.from(new Set(uids.filter(Boolean)));
+    const profiles: Record<string, UserProfile> = {};
+
+    await Promise.all(
+      uniqueUids.map(async (uid) => {
+        const user = await dataService.getUserByUid(uid);
+        if (user) {
+          profiles[uid] = user;
+        }
+      })
+    );
+
+    return profiles;
   },
 
   subscribeFriendRequests(
@@ -1707,24 +1786,54 @@ export const dataService = {
       throw new Error(`${toFriend.displayName} is already a member of this event`);
     }
 
-    const invite: Omit<EventInvitation, 'id'> = {
-      eventId: event.id,
-      eventName: event.name,
-      eventEmoji: event.emoji,
-      fromUid: fromUser.uid,
-      fromDisplayName: fromUser.displayName,
-      toUid: toFriend.uid,
-      toDisplayName: toFriend.displayName,
-      status: 'pending',
-      createdAt: Date.now(),
-    };
-
     if (!isFirebaseConfigured() || !db) {
       const all = getLocal<EventInvitation[]>('event_invitations', []);
+      const existing = all.find(
+        (i) => i.eventId === event.id && i.toUid === toFriend.uid && i.status === 'pending'
+      );
+      if (existing) {
+        throw new Error(`An invitation has already been sent to ${toFriend.displayName}.`);
+      }
+
+      const invite: Omit<EventInvitation, 'id'> = {
+        eventId: event.id,
+        eventName: event.name,
+        eventEmoji: event.emoji,
+        fromUid: fromUser.uid,
+        fromDisplayName: fromUser.displayName,
+        toUid: toFriend.uid,
+        toDisplayName: toFriend.displayName,
+        status: 'pending',
+        scope: 'full',
+        createdAt: Date.now(),
+      };
       all.unshift({ ...invite, id: 'inv_' + Date.now() });
       setLocal('event_invitations', all);
     } else {
-      await addDoc(collection(db, 'eventInvitations'), invite);
+      const q = query(
+        collection(db, 'eventInvitations'),
+        where('eventId', '==', event.id),
+        where('toUid', '==', toFriend.uid),
+        where('status', '==', 'pending')
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        throw new Error(`An invitation has already been sent to ${toFriend.displayName}.`);
+      }
+
+      const invite: Omit<EventInvitation, 'id'> = {
+        eventId: event.id,
+        eventName: event.name,
+        eventEmoji: event.emoji,
+        fromUid: fromUser.uid,
+        fromDisplayName: fromUser.displayName,
+        toUid: toFriend.uid,
+        toDisplayName: toFriend.displayName,
+        status: 'pending',
+        scope: 'full',
+        createdAt: Date.now(),
+      };
+      await addDoc(collection(db, 'eventInvitations'), sanitizeForFirestore(invite));
     }
 
     // Send notification
@@ -1757,6 +1866,27 @@ export const dataService = {
           const events = getLocal<SplitifyEvent[]>('events', []);
           const ev = events.find((e) => e.id === invitation.eventId);
           if (ev) {
+            let matchedSlotId: string | undefined;
+            if (ev.slots) {
+              const userFirst = getFirstName(user.displayName).toLowerCase();
+              const found = Object.values(ev.slots).find(
+                (s) =>
+                  !s.isClaimed &&
+                  (s.expectedUid === user.uid || s.placeholderName.toLowerCase() === userFirst)
+              );
+              if (found) {
+                matchedSlotId = found.id;
+                ev.slots[found.id] = {
+                  ...found,
+                  isClaimed: true,
+                  claimedByUid: user.uid,
+                  claimedByName: getFirstName(user.displayName),
+                  claimedAt: Date.now(),
+                  updatedAt: Date.now(),
+                };
+              }
+            }
+
             ev.members[user.uid] = {
               uid: user.uid,
               displayName: user.displayName,
@@ -1764,8 +1894,15 @@ export const dataService = {
               username: user.username,
               joinedAt: Date.now(),
               role: 'member',
+              scope: invitation.scope || 'full',
+              slotId: matchedSlotId,
             };
+            ev.updatedAt = Date.now();
             setLocal('events', events);
+
+            if (matchedSlotId) {
+              await dataService.migrateSlotExpenses(ev.id, matchedSlotId, user);
+            }
           }
         }
       }
@@ -1776,17 +1913,52 @@ export const dataService = {
     await updateDoc(invRef, { status: accept ? 'accepted' : 'declined' });
 
     if (accept) {
+      const ev = await dataService.getEventById(invitation.eventId);
+      let matchedSlotId: string | undefined;
+      const slotsUpdate: Record<string, any> = {};
+
+      if (ev && ev.slots) {
+        const userFirst = getFirstName(user.displayName).toLowerCase();
+        const found = Object.values(ev.slots).find(
+          (s) =>
+            !s.isClaimed &&
+            (s.expectedUid === user.uid || s.placeholderName.toLowerCase() === userFirst)
+        );
+        if (found) {
+          matchedSlotId = found.id;
+          slotsUpdate[`slots.${found.id}`] = {
+            ...found,
+            isClaimed: true,
+            claimedByUid: user.uid,
+            claimedByName: getFirstName(user.displayName),
+            claimedAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+        }
+      }
+
       const eventRef = doc(db, 'events', invitation.eventId);
-      await updateDoc(eventRef, {
-        [`members.${user.uid}`]: {
-          uid: user.uid,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-          username: user.username,
-          joinedAt: Date.now(),
-          role: 'member',
-        },
-      });
+      await updateDoc(
+        eventRef,
+        sanitizeForFirestore({
+          [`members.${user.uid}`]: {
+            uid: user.uid,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            username: user.username,
+            joinedAt: Date.now(),
+            role: 'member',
+            scope: invitation.scope || 'full',
+            slotId: matchedSlotId,
+          },
+          ...slotsUpdate,
+          updatedAt: Date.now(),
+        })
+      );
+
+      if (matchedSlotId) {
+        await dataService.migrateSlotExpenses(invitation.eventId, matchedSlotId, user);
+      }
 
       await dataService.createNotification({
         recipientUid: invitation.fromUid,
@@ -1820,6 +1992,10 @@ export const dataService = {
 
     const token = generateInvitationToken();
     const authorFirstName = getFirstName(user.displayName);
+    const availableSlots = Object.values(event.slots || {})
+      .filter((s) => !s.isClaimed)
+      .map((s) => ({ id: s.id, placeholderName: s.placeholderName }));
+
     const newLink: Omit<EventInvitationLink, 'id'> = {
       token,
       eventId,
@@ -1830,6 +2006,7 @@ export const dataService = {
       createdAt: Date.now(),
       scope: options?.scope || 'full',
       allowedItemIds: options?.allowedItemIds || [],
+      availableSlots,
       revoked: false,
       usesCount: 0,
       maxUses: options?.maxUses,
@@ -1950,23 +2127,96 @@ export const dataService = {
       return { event, link };
     }
 
-    const eventRef = doc(db, 'events', event.id);
-    await updateDoc(eventRef, sanitizeForFirestore({
-      [`members.${user.uid}`]: memberEntry,
-      slots,
-      updatedAt: Date.now(),
-    }));
-
+    const eventRef = doc(db, 'events', link.eventId);
     const linkRef = doc(db, 'eventInvitationLinks', link.id);
-    await updateDoc(linkRef, {
-      usesCount: (link.usesCount || 0) + 1,
+
+    let joinedEvent: SplitifyEvent = event;
+    await runTransaction(db, async (transaction) => {
+      const linkSnap = await transaction.get(linkRef);
+      if (!linkSnap.exists()) {
+        throw new Error('This invitation link does not exist or has expired.');
+      }
+      const liveLink = linkSnap.data() as EventInvitationLink;
+      if (liveLink.revoked) {
+        throw new Error('This invitation link has been revoked by the event host.');
+      }
+      if (liveLink.expiresAt && liveLink.expiresAt < Date.now()) {
+        throw new Error('This invitation link has expired.');
+      }
+      if (liveLink.maxUses && liveLink.usesCount >= liveLink.maxUses) {
+        throw new Error('This invitation link has reached its maximum uses limit.');
+      }
+
+      const eventSnap = await transaction.get(eventRef);
+      if (!eventSnap.exists()) {
+        throw new Error('The associated event does not exist.');
+      }
+      const liveEvent = { ...eventSnap.data(), id: eventSnap.id } as SplitifyEvent;
+      if (liveEvent.deleted) {
+        throw new Error('The associated event has been deleted.');
+      }
+
+      const liveSlots = { ...(liveEvent.slots || {}) };
+      if (slotId) {
+        const slot = liveSlots[slotId];
+        if (!slot) {
+          throw new Error('The selected spot does not exist.');
+        }
+        if (slot.isClaimed && slot.claimedByUid !== user.uid) {
+          throw new Error(`Slot "${slot.placeholderName}" has already been claimed by someone else.`);
+        }
+        liveSlots[slotId] = {
+          ...slot,
+          isClaimed: true,
+          claimedByUid: user.uid,
+          claimedByName: userFirstName,
+          claimedAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      }
+
+      const isAlreadyMember = Boolean(liveEvent.members && liveEvent.members[user.uid]);
+      const currentMember = liveEvent.members?.[user.uid];
+      const finalMemberEntry: EventMember = {
+        uid: user.uid,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        username: user.username,
+        joinedAt: currentMember ? currentMember.joinedAt : Date.now(),
+        role: currentMember ? currentMember.role : 'member',
+        scope: liveLink.scope,
+        allowedItemIds: liveLink.allowedItemIds || [],
+        slotId: slotId || currentMember?.slotId,
+      };
+
+      transaction.update(
+        eventRef,
+        sanitizeForFirestore({
+          [`members.${user.uid}`]: finalMemberEntry,
+          slots: liveSlots,
+          updatedAt: Date.now(),
+        })
+      );
+
+      if (!isAlreadyMember) {
+        transaction.update(linkRef, {
+          usesCount: (liveLink.usesCount || 0) + 1,
+        });
+      }
+
+      joinedEvent = {
+        ...liveEvent,
+        members: { ...(liveEvent.members || {}), [user.uid]: finalMemberEntry },
+        slots: liveSlots,
+        updatedAt: Date.now(),
+      };
     });
 
     if (slotId) {
-      await dataService.migrateSlotExpenses(event.id, slotId, user);
+      await dataService.migrateSlotExpenses(link.eventId, slotId, user);
     }
 
-    return { event, link };
+    return { event: joinedEvent, link };
   },
 
   // ==========================================
@@ -2341,6 +2591,43 @@ export const dataService = {
     });
 
     return cleanHandle;
+  },
+
+  async checkUsernameAvailable(handle: string): Promise<boolean> {
+    const clean = handle.trim().replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(clean)) return false;
+
+    if (!isFirebaseConfigured() || !db) {
+      const mockUsernames = ['krish', 'rahul', 'priya', 'ananya'];
+      const localUsers = getLocal<UserProfile[]>('mock_users', []);
+      return !mockUsernames.includes(clean) && !localUsers.some((u) => u.username === clean);
+    }
+
+    try {
+      const uSnap = await getDoc(doc(db, 'usernames', clean));
+      return !uSnap.exists();
+    } catch {
+      return false;
+    }
+  },
+
+  async suggestAlternativeUsernames(
+    displayName: string,
+    requestedHandle: string,
+    maxSuggestions: number = 5
+  ): Promise<string[]> {
+    const candidates = generateHandleCandidates(displayName, requestedHandle);
+    const available: string[] = [];
+
+    for (const cand of candidates) {
+      const isAvail = await dataService.checkUsernameAvailable(cand);
+      if (isAvail) {
+        available.push(cand);
+        if (available.length >= maxSuggestions) break;
+      }
+    }
+
+    return available;
   },
 
   // ==========================================

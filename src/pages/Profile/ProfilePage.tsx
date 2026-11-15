@@ -24,6 +24,8 @@ export const ProfilePage: React.FC = () => {
   const [isEditHandleModalOpen, setIsEditHandleModalOpen] = useState(false);
   const [newHandle, setNewHandle] = useState('');
   const [handleError, setHandleError] = useState<string | null>(null);
+  const [alternativeSuggestions, setAlternativeSuggestions] = useState<string[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSavingHandle, setIsSavingHandle] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -32,6 +34,7 @@ export const ProfilePage: React.FC = () => {
   const handleOpenEditHandle = () => {
     setNewHandle(user.username || '');
     setHandleError(null);
+    setAlternativeSuggestions([]);
     setIsEditHandleModalOpen(true);
   };
 
@@ -43,10 +46,21 @@ export const ProfilePage: React.FC = () => {
       const updatedUsername = await dataService.changeUsernameHandle(user, newHandle);
       await updateProfile({ username: updatedUsername });
       setIsEditHandleModalOpen(false);
+      setAlternativeSuggestions([]);
       setSuccessMsg(`Handle updated to @${updatedUsername}`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
-      setHandleError(err.message || 'Failed to update handle');
+      const errMsg = err.message || 'Failed to update handle';
+      setHandleError(errMsg);
+      setIsLoadingSuggestions(true);
+      try {
+        const sugs = await dataService.suggestAlternativeUsernames(user.displayName, newHandle);
+        setAlternativeSuggestions(sugs);
+      } catch {
+        // Silently ignore suggestion retrieval error
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
     } finally {
       setIsSavingHandle(false);
     }
@@ -183,6 +197,35 @@ export const ProfilePage: React.FC = () => {
             <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 text-xs font-semibold flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{handleError}</span>
+            </div>
+          )}
+
+          {alternativeSuggestions.length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-teal-50/80 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-2">
+              <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 block">
+                Available handles related to your name (click to select):
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {alternativeSuggestions.map((sug) => (
+                  <button
+                    key={sug}
+                    type="button"
+                    onClick={() => {
+                      setNewHandle(sug);
+                      setHandleError(null);
+                    }}
+                    className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 hover:bg-teal-100/60 dark:hover:bg-teal-900/50 transition-colors shadow-sm"
+                  >
+                    @{sug}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isLoadingSuggestions && (
+            <div className="text-center py-1 text-xs text-slate-400">
+              Finding available handle suggestions...
             </div>
           )}
 

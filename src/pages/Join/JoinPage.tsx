@@ -70,17 +70,49 @@ export const JoinPage: React.FC = () => {
 
         setInvitationLink(link);
 
-        // Fetch associated event details
-        const ev = await dataService.getEventById(link.eventId);
-        if (!isMounted) return;
-
-        if (!ev || ev.deleted) {
-          setError('The associated event does not exist or has been deleted.');
-          setLoading(false);
-          return;
+        // Fetch associated event details if user is authenticated;
+        // Otherwise safely construct the preview event from the invitation link
+        let ev: SplitifyEvent | null = null;
+        if (user) {
+          try {
+            ev = await dataService.getEventById(link.eventId);
+          } catch {
+            ev = null;
+          }
         }
 
-        setEvent(ev);
+        if (!isMounted) return;
+
+        if (ev && !ev.deleted) {
+          setEvent(ev);
+        } else {
+          // Construct preview event from invitation link metadata
+          const previewSlots: Record<string, EventSlot> = {};
+          if (link.availableSlots) {
+            for (const s of link.availableSlots) {
+              previewSlots[s.id] = {
+                id: s.id,
+                eventId: link.eventId,
+                placeholderName: s.placeholderName,
+                isClaimed: false,
+                createdAt: link.createdAt,
+                updatedAt: link.createdAt,
+              };
+            }
+          }
+
+          setEvent({
+            id: link.eventId,
+            name: link.eventName,
+            emoji: link.eventEmoji || '🏖️',
+            currency: 'INR',
+            hostUid: link.createdByUid,
+            members: {},
+            slots: previewSlots,
+            createdAt: link.createdAt,
+            updatedAt: link.createdAt,
+          });
+        }
       } catch (err: any) {
         if (isMounted) {
           setError(err.message || 'Failed to validate invitation link.');
@@ -94,7 +126,7 @@ export const JoinPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [token]);
+  }, [token, user]);
 
   const handleGoogleLogin = async () => {
     try {
@@ -179,8 +211,8 @@ export const JoinPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Scope info */}
-        <div className="bg-slate-50 dark:bg-[#0D1B2A]/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-800/80 mb-6">
+        {/* Access Scope info */}
+        <div className="bg-slate-50 dark:bg-[#0D1B2A]/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-800/80 mb-5">
           <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">
             <span className="flex items-center gap-1.5">
               <Shield className="w-4 h-4 text-teal-500" />
@@ -203,6 +235,36 @@ export const JoinPage: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {/* People Joining Slots Section (Section 5.2) */}
+        {slotsList.length > 0 && (
+          <div className="bg-slate-50 dark:bg-[#0D1B2A]/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-800/80 mb-5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
+              <span>👥</span> People Joining
+            </h3>
+            <div className="space-y-1.5">
+              {slotsList.map((slot) => (
+                <div
+                  key={slot.id}
+                  className="flex items-center justify-between py-1.5 px-3 rounded-xl bg-white dark:bg-slate-800/70 border border-slate-100 dark:border-slate-800 text-xs font-semibold"
+                >
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    {slot.placeholderName}
+                  </span>
+                  {slot.isClaimed ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-400">
+                      Claimed by {slot.claimedByName || 'Member'}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                      Available
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Unauthenticated State */}
         {!user ? (
@@ -241,63 +303,56 @@ export const JoinPage: React.FC = () => {
         ) : (
           /* User is authenticated and ready to join */
           <div className="space-y-5">
-            {/* Slot Claiming or Join as New Person */}
+            {/* Slot Claiming or Join as New Person (Section 5.2) */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 block">
-                How are you joining?
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 block">
+                How would you like to join?
               </label>
 
               <div className="space-y-2">
+                {slotsList
+                  .filter((s) => !s.isClaimed)
+                  .map((slot) => {
+                    const isSelected = selectedSlotId === slot.id;
+                    return (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        onClick={() => setSelectedSlotId(slot.id)}
+                        className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
+                          isSelected
+                            ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500 shadow-sm'
+                            : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <UserCheck className="w-4 h-4 text-teal-500 flex-shrink-0" />
+                          <span>Claim {slot.placeholderName}</span>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-teal-500/15 text-teal-600 dark:text-teal-400">
+                          {isSelected ? 'Selected' : 'Claim Slot'}
+                        </span>
+                      </button>
+                    );
+                  })}
+
                 <button
                   type="button"
                   onClick={() => setSelectedSlotId('')}
                   className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
                     selectedSlotId === ''
-                      ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-1 ring-teal-500'
+                      ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500 shadow-sm'
                       : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <UserPlus className="w-4 h-4 text-teal-500" />
+                  <div className="flex items-center gap-2.5">
+                    <UserPlus className="w-4 h-4 text-teal-500 flex-shrink-0" />
                     <span>Join as New Person</span>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-semibold">Fresh Member</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                    {selectedSlotId === '' ? 'Selected' : 'Fresh Member'}
+                  </span>
                 </button>
-
-                {slotsList.filter((s) => !s.isClaimed).length > 0 && (
-                  <div className="pt-2">
-                    <span className="text-[11px] font-bold text-slate-400 mb-1.5 block">
-                      Or claim an expected spot saved for you:
-                    </span>
-                    <div className="space-y-1.5">
-                      {slotsList
-                        .filter((s) => !s.isClaimed)
-                        .map((slot) => {
-                          const isSelected = selectedSlotId === slot.id;
-                          return (
-                            <button
-                              key={slot.id}
-                              type="button"
-                              onClick={() => setSelectedSlotId(slot.id)}
-                              className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
-                                isSelected
-                                  ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-1 ring-teal-500'
-                                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <UserCheck className="w-4 h-4 text-teal-500" />
-                                <span>Claim spot for "{slot.placeholderName}"</span>
-                              </div>
-                              <span className="text-[10px] text-teal-600 dark:text-teal-400 font-bold">
-                                Select Spot
-                              </span>
-                            </button>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 

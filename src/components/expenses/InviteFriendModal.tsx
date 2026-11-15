@@ -25,31 +25,40 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [invitationLink, setInvitationLink] = useState<EventInvitationLink | null>(null);
   const [invitingUid, setInvitingUid] = useState<string | null>(null);
+  const [invitedUids, setInvitedUids] = useState<Record<string, boolean>>({});
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     setLoading(true);
+    let isCurrent = true;
 
     dataService.createInvitationLink(event.id, currentUser).then((link) => {
-      setInvitationLink(link);
+      if (isCurrent) setInvitationLink(link);
     });
 
     const unsub = dataService.subscribeFriends(currentUser.uid, async (list) => {
       setFriendships(list);
+      const friendUids = list.map((fs) => (fs.user1Uid === currentUser.uid ? fs.user2Uid : fs.user1Uid));
+      const profileMap = await dataService.getUsersByUids(friendUids);
+      if (!isCurrent) return;
+
       const profiles: UserProfile[] = [];
-      for (const fs of list) {
-        const friendUid = fs.user1Uid === currentUser.uid ? fs.user2Uid : fs.user1Uid;
-        const p = await dataService.searchUserByUsername(
-          friendUid.replace('demo_user_', '')
-        );
-        if (p) profiles.push(p);
+      const seenUids = new Set<string>();
+      for (const uid of friendUids) {
+        if (!seenUids.has(uid) && profileMap[uid]) {
+          seenUids.add(uid);
+          profiles.push(profileMap[uid]);
+        }
       }
       setFriendProfiles(profiles);
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      isCurrent = false;
+      unsub();
+    };
   }, [isOpen, event.id, currentUser]);
 
   const origin = window?.location?.origin || 'https://k-692.github.io';
@@ -69,6 +78,7 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
     setStatusMessage(null);
     try {
       await dataService.sendEventInvitation(event, currentUser, friend);
+      setInvitedUids((prev) => ({ ...prev, [friend.uid]: true }));
       setStatusMessage(`Invitation sent to ${friend.displayName}!`);
     } catch (err: any) {
       setStatusMessage(err.message || 'Failed to send invitation');
@@ -145,13 +155,20 @@ export const InviteFriendModal: React.FC<InviteFriendModalProps> = ({
 
                   <Button
                     type="button"
-                    variant="primary"
+                    variant={invitedUids[friend.uid] ? 'outline' : 'primary'}
                     size="sm"
+                    disabled={Boolean(invitedUids[friend.uid])}
                     onClick={() => handleInvite(friend)}
                     isLoading={invitingUid === friend.uid}
-                    leftIcon={<UserPlus className="w-3.5 h-3.5" />}
+                    leftIcon={
+                      invitedUids[friend.uid] ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <UserPlus className="w-3.5 h-3.5" />
+                      )
+                    }
                   >
-                    Invite
+                    {invitedUids[friend.uid] ? 'Invited' : 'Invite'}
                   </Button>
                 </div>
               ))}

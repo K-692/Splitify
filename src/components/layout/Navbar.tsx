@@ -46,9 +46,9 @@ export const Navbar: React.FC = () => {
         {/* Brand & Logo */}
         <Link to="/" className="flex items-center gap-2 group select-none">
           <img
-            src="./assets/splitify-logo.png"
+            src={`${import.meta.env.BASE_URL}assets/splitify-logo.png`}
             alt="Splitify Logo"
-            className="h-8 sm:h-9 w-auto max-w-[150px] object-contain group-hover:scale-105 transition-transform"
+            className="h-10 sm:h-12 w-auto max-w-[180px] sm:max-w-[220px] object-contain group-hover:scale-105 transition-transform"
           />
         </Link>
 

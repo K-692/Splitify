@@ -4,7 +4,10 @@ import { Button } from '@/components/common/Button';
 import { SplitifyEvent, ExpenseEntry, EventItem, SplitMode, UserProfile } from '@/types';
 import { getEmojiForName } from '@/utils/emoji';
 import { toMinorUnits, formatCurrency } from '@/utils/currency';
-import { calculateEqualShares, validateAmountShares } from '@/domain/calculations/finance';
+import {
+  calculateEqualShares,
+  distributeRemainingShares,
+} from '@/domain/calculations/finance';
 import { Avatar } from '@/components/common/Avatar';
 import { getFirstName } from '@/utils/name';
 import { getTodayLocalDateString } from '@/utils/date';
@@ -122,6 +125,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [splitBy, setSplitBy] = useState<SplitMode>('equal');
   const [participants, setParticipants] = useState<string[]>([]);
   const [customSharesInput, setCustomSharesInput] = useState<Record<string, string>>({});
+  const [manualEditedUids, setManualEditedUids] = useState<Record<string, boolean>>({});
   const [comment, setComment] = useState('');
   const [emoji, setEmoji] = useState('📌');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -149,12 +153,15 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setComment(source.comment || '');
 
       const initialShares: Record<string, string> = {};
+      const initialManual: Record<string, boolean> = {};
       if (source.shares) {
         for (const [uid, minor] of Object.entries(source.shares)) {
           initialShares[uid] = (minor / 100).toString();
+          initialManual[uid] = true;
         }
       }
       setCustomSharesInput(initialShares);
+      setManualEditedUids(initialManual);
     } else {
       setHasSubitems(false);
       setName('');
@@ -168,6 +175,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       const allIds = assignablePeople.map((p) => p.id);
       setParticipants(allIds);
       setCustomSharesInput({});
+      setManualEditedUids({});
       setComment('');
     }
   }, [isOpen, initialExpense, initialItem, currentUser.uid, assignablePeople]);
@@ -195,13 +203,47 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     }
   };
 
-  // Compute validation for custom amount shares
+  // Compute validation and remaining amount distribution for custom shares
   const costMinor = toMinorUnits(costInput);
-  const customSharesMinor: Record<string, number> = {};
+
+  const manualSharesMinor: Record<string, number> = {};
   for (const uid of participants) {
-    customSharesMinor[uid] = toMinorUnits(customSharesInput[uid] || '0');
+    if (manualEditedUids[uid]) {
+      manualSharesMinor[uid] = toMinorUnits(customSharesInput[uid] || '0');
+    }
   }
-  const amountValidation = validateAmountShares(costMinor, customSharesMinor, participants);
+
+  const amountDistribution = distributeRemainingShares(costMinor, participants, manualSharesMinor);
+  const customSharesMinor = amountDistribution.shares;
+  const amountValidation = {
+    isValid: amountDistribution.isValid,
+    differenceMinor: amountDistribution.remainingMinor,
+  };
+
+  const handleShareInputChange = (uid: string, rawVal: string) => {
+    if (rawVal.trim() === '') {
+      const nextManual = { ...manualEditedUids };
+      delete nextManual[uid];
+      setManualEditedUids(nextManual);
+
+      const nextInput = { ...customSharesInput };
+      delete nextInput[uid];
+      setCustomSharesInput(nextInput);
+    } else {
+      setManualEditedUids((prev) => ({ ...prev, [uid]: true }));
+      setCustomSharesInput((prev) => ({ ...prev, [uid]: rawVal }));
+    }
+  };
+
+  const handleResetShareToAuto = (uid: string) => {
+    const nextManual = { ...manualEditedUids };
+    delete nextManual[uid];
+    setManualEditedUids(nextManual);
+
+    const nextInput = { ...customSharesInput };
+    delete nextInput[uid];
+    setCustomSharesInput(nextInput);
+  };
 
   // Stage a subitem into the category wizard
   const handleStageSubitem = () => {
@@ -245,6 +287,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     setComment('');
     setSplitBy('equal');
     setCustomSharesInput({});
+    setManualEditedUids({});
     return true;
   };
 
@@ -692,7 +735,21 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                               {formatCurrency(equalShareMinor, event.currency)}
                             </span>
                           ) : (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
+                              {manualEditedUids[person.id] ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetShareToAuto(person.id)}
+                                  className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/15 hover:bg-amber-500/25 px-1.5 py-0.5 rounded-md transition-colors"
+                                  title="Manually edited. Click to auto-split"
+                                >
+                                  Fixed ✕
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-bold text-teal-600 dark:text-teal-400 bg-teal-500/15 px-1.5 py-0.5 rounded-md">
+                                  Auto
+                                </span>
+                              )}
                               <span className="text-xs font-bold text-slate-400">
                                 {event.currency === 'INR' ? '₹' : '$'}
                               </span>
@@ -700,14 +757,19 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                value={customSharesInput[person.id] || ''}
-                                onChange={(e) =>
-                                  setCustomSharesInput({
-                                    ...customSharesInput,
-                                    [person.id]: e.target.value,
-                                  })
+                                value={
+                                  manualEditedUids[person.id]
+                                    ? customSharesInput[person.id] ?? ''
+                                    : costMinor > 0
+                                    ? ((amountDistribution.shares[person.id] || 0) / 100).toFixed(2)
+                                    : ''
                                 }
-                                className="w-20 px-2 py-1 text-right text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500"
+                                onChange={(e) => handleShareInputChange(person.id, e.target.value)}
+                                className={`w-24 px-2 py-1 text-right text-xs font-bold rounded-xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500 ${
+                                  manualEditedUids[person.id]
+                                    ? 'border-amber-400 dark:border-amber-600'
+                                    : 'border-slate-200 dark:border-slate-700'
+                                }`}
                               />
                             </div>
                           )}
@@ -718,29 +780,42 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 })}
               </div>
 
-              {/* Amount Split Validation status */}
+              {/* Amount Split Summary (Section 7.4) */}
               {splitBy === 'amount' && (
                 <div
-                  className={`p-2 rounded-xl text-xs font-bold flex items-center justify-between ${
-                    amountValidation.isValid
-                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
-                      : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                  className={`p-3.5 rounded-2xl text-xs space-y-1.5 border transition-all ${
+                    amountDistribution.isValid
+                      ? 'bg-emerald-50/80 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                      : 'bg-amber-50/80 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
                   }`}
                 >
-                  <span>Total allocated:</span>
-                  <span>
-                    {formatCurrency(
-                      Object.values(customSharesMinor).reduce((a, b) => a + b, 0),
-                      event.currency
-                    )}{' '}
-                    / {formatCurrency(costMinor, event.currency)}
-                    {!amountValidation.isValid && (
-                      <span className="ml-1.5 underline">
-                        ({amountValidation.differenceMinor > 0 ? 'Remaining: ' : 'Over: '}
-                        {formatCurrency(Math.abs(amountValidation.differenceMinor), event.currency)})
-                      </span>
-                    )}
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400 font-bold">Total:</span>
+                    <span className="font-extrabold">{formatCurrency(costMinor, event.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400 font-bold">Assigned:</span>
+                    <span className="font-extrabold">
+                      {formatCurrency(amountDistribution.assignedTotalMinor, event.currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-slate-200/60 dark:border-slate-700/60 pt-1.5">
+                    <span className="text-slate-500 dark:text-slate-400 font-bold">Remaining:</span>
+                    <span
+                      className={`font-black ${
+                        amountDistribution.remainingMinor === 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-amber-600 dark:text-amber-400'
+                      }`}
+                    >
+                      {formatCurrency(amountDistribution.remainingMinor, event.currency)}
+                      {amountDistribution.remainingMinor !== 0 && (
+                        <span className="ml-1 text-[11px] font-semibold">
+                          ({amountDistribution.remainingMinor > 0 ? 'Short' : 'Exceeds by ' + formatCurrency(Math.abs(amountDistribution.remainingMinor), event.currency)})
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import { Friendship, FriendRequest, UserProfile } from '@/types';
 import { dataService } from '@/services/dataService';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
+import { getFirstName } from '@/utils/name';
 import {
   Users,
   UserPlus,
@@ -45,22 +46,38 @@ export const FriendsPage: React.FC = () => {
       }
     );
 
+    let isCurrent = true;
     const unsubFriends = dataService.subscribeFriends(user.uid, async (list) => {
       setFriendships(list);
-      // Fetch user profile for each friend
+      // Fetch user profile for each friend by UID
+      const friendUids = list.map((fs) => (fs.user1Uid === user.uid ? fs.user2Uid : fs.user1Uid));
+      const profileMap = await dataService.getUsersByUids(friendUids);
+      if (!isCurrent) return;
+
       const profiles: UserProfile[] = [];
-      for (const fs of list) {
-        const friendUid = fs.user1Uid === user.uid ? fs.user2Uid : fs.user1Uid;
-        const p = await dataService.searchUserByUsername(
-          friendUid.replace('demo_user_', '')
-        );
-        if (p) profiles.push(p);
+      const seenUids = new Set<string>();
+      for (const uid of friendUids) {
+        if (!seenUids.has(uid)) {
+          seenUids.add(uid);
+          if (profileMap[uid]) {
+            profiles.push(profileMap[uid]);
+          } else {
+            profiles.push({
+              uid,
+              displayName: 'Splitify Friend',
+              username: 'friend',
+              email: '',
+              createdAt: Date.now(),
+            });
+          }
+        }
       }
       setFriendProfiles(profiles);
       setLoading(false);
     });
 
     return () => {
+      isCurrent = false;
       unsubRequests();
       unsubFriends();
     };
@@ -319,9 +336,14 @@ export const FriendsPage: React.FC = () => {
                         size="md"
                       />
                       <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-900 dark:text-white truncate">
-                          {friend.displayName}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-black text-slate-900 dark:text-white truncate">
+                            {getFirstName(friend.displayName)}
+                          </p>
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                            Friend
+                          </span>
+                        </div>
                         <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 truncate">
                           @{friend.username}
                         </p>

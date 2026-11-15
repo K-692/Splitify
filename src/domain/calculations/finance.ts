@@ -57,6 +57,112 @@ export function validateAmountShares(
   };
 }
 
+export interface AmountSplitDistribution {
+  shares: Record<string, number>;
+  assignedTotalMinor: number;
+  remainingMinor: number;
+  isFullyAllocated: boolean;
+  isValid: boolean;
+  autoUids: string[];
+  manualUids: string[];
+}
+
+/**
+ * Automatically divides any remaining amount equally among unassigned participants
+ * while strictly preserving amounts the user has explicitly edited.
+ * All calculations use integer minor currency units (paise) with deterministic remainder distribution.
+ */
+export function distributeRemainingShares(
+  costMinor: number,
+  participantUids: string[],
+  manualSharesMinor: Record<string, number> = {}
+): AmountSplitDistribution {
+  if (!participantUids || participantUids.length === 0) {
+    return {
+      shares: {},
+      assignedTotalMinor: 0,
+      remainingMinor: Math.max(0, costMinor),
+      isFullyAllocated: costMinor === 0,
+      isValid: false,
+      autoUids: [],
+      manualUids: [],
+    };
+  }
+
+  // Identify manual and auto participants among currently active participants
+  const manualUids: string[] = [];
+  const autoUids: string[] = [];
+
+  for (const uid of participantUids) {
+    if (
+      uid in manualSharesMinor &&
+      manualSharesMinor[uid] !== undefined &&
+      manualSharesMinor[uid] !== null
+    ) {
+      manualUids.push(uid);
+    } else {
+      autoUids.push(uid);
+    }
+  }
+
+  // Sum manual allocations
+  let manualTotalMinor = 0;
+  const shares: Record<string, number> = {};
+  for (const uid of manualUids) {
+    const val = Math.max(0, Math.round(manualSharesMinor[uid] || 0));
+    shares[uid] = val;
+    manualTotalMinor += val;
+  }
+
+  // Distribute remaining amount to auto participants
+  const remainingToDistribute = costMinor - manualTotalMinor;
+
+  if (autoUids.length > 0) {
+    if (remainingToDistribute > 0) {
+      // Deterministically sort auto UIDs so remainder allocation is consistent
+      const sortedAutoUids = [...autoUids].sort();
+      const count = sortedAutoUids.length;
+      const baseShare = Math.floor(remainingToDistribute / count);
+      const remainder = remainingToDistribute % count;
+
+      for (let i = 0; i < count; i++) {
+        const uid = sortedAutoUids[i];
+        shares[uid] = baseShare + (i < remainder ? 1 : 0);
+      }
+    } else {
+      // When manual assignments exceed or equal total cost, unassigned shares receive 0
+      for (const uid of autoUids) {
+        shares[uid] = 0;
+      }
+    }
+  }
+
+  // Compute final assigned total and remaining difference
+  let assignedTotalMinor = 0;
+  for (const uid of participantUids) {
+    assignedTotalMinor += shares[uid] || 0;
+  }
+
+  const remainingMinor = costMinor - assignedTotalMinor;
+  const isFullyAllocated = remainingMinor === 0;
+  const allNonNegative = participantUids.every((uid) => (shares[uid] || 0) >= 0);
+  const isValid =
+    costMinor > 0 &&
+    isFullyAllocated &&
+    allNonNegative &&
+    participantUids.length > 0;
+
+  return {
+    shares,
+    assignedTotalMinor,
+    remainingMinor,
+    isFullyAllocated,
+    isValid,
+    autoUids,
+    manualUids,
+  };
+}
+
 /**
  * Unified representation of an active financial expense
  * (either a standalone EventItem or a category subitem ExpenseEntry)

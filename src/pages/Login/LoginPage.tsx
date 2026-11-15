@@ -44,7 +44,7 @@ export const LoginPage: React.FC = () => {
         {/* Official Splitify Logo (No circular frame) */}
         <div className="w-48 sm:w-56 mx-auto mb-3 flex items-center justify-center">
           <img
-            src="./assets/splitify-logo.png"
+            src={`${import.meta.env.BASE_URL}assets/splitify-logo.png`}
             alt="Splitify Logo"
             className="w-full h-auto max-h-24 object-contain"
           />

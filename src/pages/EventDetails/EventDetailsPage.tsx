@@ -41,6 +41,8 @@ import {
   Copy,
   LogOut,
   AlertTriangle,
+  Search,
+  X,
 } from 'lucide-react';
 
 export const EventDetailsPage: React.FC = () => {
@@ -88,6 +90,8 @@ export const EventDetailsPage: React.FC = () => {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [expandedAuditLogs, setExpandedAuditLogs] = useState<Record<string, boolean>>({});
+  const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
+  const [sendingReminders, setSendingReminders] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!eventId) return;
@@ -465,9 +469,16 @@ export const EventDetailsPage: React.FC = () => {
   };
 
   const handleSendReminder = async (debtorUid: string, amountMinor: number) => {
-    if (!event || !user) return;
-    await sendReminder(debtorUid, amountMinor, event.name);
-    showToast('Payment reminder sent! 🔔');
+    if (!event || !user || sendingReminders[debtorUid]) return;
+    setSendingReminders((prev) => ({ ...prev, [debtorUid]: true }));
+    try {
+      await sendReminder(debtorUid, amountMinor, event.name);
+      showToast('Payment reminder sent! 🔔');
+    } catch (err: any) {
+      alert(err.message || 'Failed to send reminder');
+    } finally {
+      setSendingReminders((prev) => ({ ...prev, [debtorUid]: false }));
+    }
   };
 
   if (loading) {
@@ -493,6 +504,90 @@ export const EventDetailsPage: React.FC = () => {
   const isHost = event.hostUid === user.uid;
   const activeItems = items.filter((i) => !i.deleted);
   const slotsCount = Object.keys(event.slots || {}).length;
+
+  const { debtsOwedToCurrentUser, userOwesMember } = useMemo(() => {
+    const owed: Record<string, number> = {};
+    const owes: Record<string, number> = {};
+    if (financialOverview && user) {
+      for (const sug of financialOverview.settlementSuggestions) {
+        if (sug.toUid === user.uid && sug.amountMinor > 0) {
+          owed[sug.fromUid] = (owed[sug.fromUid] || 0) + sug.amountMinor;
+        }
+        if (sug.fromUid === user.uid && sug.amountMinor > 0) {
+          owes[sug.toUid] = (owes[sug.toUid] || 0) + sug.amountMinor;
+        }
+      }
+    }
+    return { debtsOwedToCurrentUser: owed, userOwesMember: owes };
+  }, [financialOverview, user]);
+
+  const normalizedSearchQuery = expenseSearchQuery.trim().toLowerCase();
+
+  const { displayedItems, matchingSubitemIdsByItem } = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return { displayedItems: activeItems, matchingSubitemIdsByItem: {} as Record<string, Set<string>> };
+    }
+
+    const matchesPayer = (paidByUid?: string, payerName?: string) => {
+      if (!paidByUid && !payerName) return false;
+      if (payerName && payerName.toLowerCase().includes(normalizedSearchQuery)) return true;
+      if (paidByUid) {
+        const member = event?.members?.[paidByUid];
+        if (member?.displayName?.toLowerCase().includes(normalizedSearchQuery)) return true;
+        const slot = event?.slots?.[paidByUid];
+        if (slot?.placeholderName?.toLowerCase().includes(normalizedSearchQuery)) return true;
+      }
+      return false;
+    };
+
+    const matchingIds: Record<string, Set<string>> = {};
+    const filtered: EventItem[] = [];
+
+    for (const item of activeItems) {
+      if (item.isSettlementsItem) {
+        if (
+          item.name.toLowerCase().includes(normalizedSearchQuery) ||
+          'settlements'.includes(normalizedSearchQuery) ||
+          'payments'.includes(normalizedSearchQuery)
+        ) {
+          filtered.push(item);
+        }
+        continue;
+      }
+
+      if (item.isCategory) {
+        const categoryNameMatches = item.name.toLowerCase().includes(normalizedSearchQuery);
+        const categorySubs = expensesByItem[item.id] || [];
+        const matchingSubs = categorySubs.filter(
+          (exp) =>
+            exp.name.toLowerCase().includes(normalizedSearchQuery) ||
+            (exp.comment && exp.comment.toLowerCase().includes(normalizedSearchQuery)) ||
+            matchesPayer(exp.paidBy, exp.createdByName)
+        );
+
+        if (categoryNameMatches) {
+          filtered.push(item);
+          matchingIds[item.id] = new Set(categorySubs.map((s) => s.id));
+        } else if (matchingSubs.length > 0) {
+          filtered.push(item);
+          matchingIds[item.id] = new Set(matchingSubs.map((s) => s.id));
+        }
+        continue;
+      }
+
+      // Standalone item
+      const itemMatches =
+        item.name.toLowerCase().includes(normalizedSearchQuery) ||
+        (item.comment && item.comment.toLowerCase().includes(normalizedSearchQuery)) ||
+        matchesPayer(item.paidBy, item.createdByName);
+
+      if (itemMatches) {
+        filtered.push(item);
+      }
+    }
+
+    return { displayedItems: filtered, matchingSubitemIdsByItem: matchingIds };
+  }, [activeItems, normalizedSearchQuery, expensesByItem, event]);
 
   return (
     <div className="space-y-6 pb-12 max-w-5xl mx-auto">
@@ -750,8 +845,34 @@ export const EventDetailsPage: React.FC = () => {
       {/* ==================================================== */}
       {activeTab === 'hierarchy' && (
         <div className="space-y-4">
+          {/* Search bar immediately above expenses hierarchy (Section 6) */}
+          {activeItems.length > 0 && (
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <Search className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                placeholder="Search expenses by name, category, comment, or payer..."
+                value={expenseSearchQuery}
+                onChange={(e) => setExpenseSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-9 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15263C] text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none placeholder:text-slate-400 transition-all shadow-sm"
+              />
+              {expenseSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setExpenseSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Global Selection Bar if subitems exist */}
-          {expenses.filter((e) => !e.deleted).length > 0 && (
+          {expenses.filter((e) => !e.deleted).length > 0 && !normalizedSearchQuery && (
             <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-3">
                 <button
@@ -788,7 +909,7 @@ export const EventDetailsPage: React.FC = () => {
             </div>
           )}
 
-          {/* Empty state */}
+          {/* Empty state when no expenses exist in the event */}
           {activeItems.length === 0 && (
             <div className="text-center py-16 px-4 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 shadow-sm">
               <span className="text-4xl">🧾</span>
@@ -815,13 +936,38 @@ export const EventDetailsPage: React.FC = () => {
             </div>
           )}
 
+          {/* Empty search results state (Section 6) */}
+          {activeItems.length > 0 && normalizedSearchQuery && displayedItems.length === 0 && (
+            <div className="text-center py-14 px-4 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 shadow-sm">
+              <Search className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-white mt-2">
+                No matching expenses found.
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                No expenses, categories, or comments matched &quot;{expenseSearchQuery}&quot;.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExpenseSearchQuery('')}
+                className="mt-4 text-xs"
+              >
+                Clear Search
+              </Button>
+            </div>
+          )}
+
           {/* Item-First List */}
           <div className="space-y-4">
-            {activeItems.map((item) => {
+            {displayedItems.map((item) => {
               const isCategory = Boolean(item.isCategory);
               const isSettlement = Boolean(item.isSettlementsItem);
-              const isCollapsed = Boolean(collapsedItems[item.id]);
-              const itemExpenses = expensesByItem[item.id] || [];
+              const isCollapsed = !normalizedSearchQuery && Boolean(collapsedItems[item.id]);
+              const rawItemExpenses = expensesByItem[item.id] || [];
+              const itemExpenses =
+                normalizedSearchQuery && matchingSubitemIdsByItem[item.id]
+                  ? rawItemExpenses.filter((e) => matchingSubitemIdsByItem[item.id].has(e.id))
+                  : rawItemExpenses;
               const itemTotalMinor = itemTotalsMinor[item.id] || 0;
               const allItemExpensesSelected =
                 itemExpenses.length > 0 && itemExpenses.every((e) => selectedExpenseIds[e.id]);
@@ -1266,15 +1412,15 @@ export const EventDetailsPage: React.FC = () => {
       {/* ==================================================== */}
       {activeTab === 'dashboard' && financialOverview && (
         <div className="space-y-6">
-          {/* Debt Simplification Suggestions */}
+          {/* Member Ledger Breakdown (Section 8.1 & 8.2) */}
           <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>🤝</span> Optimal Settlement Suggestions
+                  <span>👥</span> Individual Member Totals
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Minimal transactions calculated automatically to settle all debts.
+                  Individual spending, fair share allocation, and current net balances.
                 </p>
               </div>
 
@@ -1286,94 +1432,16 @@ export const EventDetailsPage: React.FC = () => {
               )}
             </div>
 
-            {financialOverview.settlementSuggestions.length === 0 ? (
-              <div className="text-center py-8 text-xs font-bold text-teal-600 dark:text-teal-400">
-                🎉 All event expenses are completely settled! No outstanding payments.
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {financialOverview.settlementSuggestions.map((sug, idx) => {
-                  const fromMember = event.members[sug.fromUid];
-                  const toMember = event.members[sug.toUid];
-                  const isUserInvolved = sug.fromUid === user.uid || sug.toUid === user.uid;
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        isUserInvolved
-                          ? 'border-teal-500/40 bg-teal-50/20 dark:bg-teal-950/15'
-                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar
-                          src={fromMember?.photoURL}
-                          name={getFirstName(fromMember?.displayName || sug.fromUid)}
-                          size="sm"
-                        />
-                        <div className="text-xs">
-                          <span className="font-extrabold text-slate-800 dark:text-white">
-                            {getFirstName(fromMember?.displayName || sug.fromUid)}{' '}
-                            {sug.fromUid === user.uid ? '(You)' : ''}
-                          </span>
-                          <span className="text-slate-400 mx-1">owes</span>
-                          <strong className="text-slate-800 dark:text-white font-extrabold">
-                            {getFirstName(toMember?.displayName || sug.toUid)}{' '}
-                            {sug.toUid === user.uid ? '(You)' : ''}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-3">
-                        <span className="text-base font-black text-slate-900 dark:text-white">
-                          {formatCurrency(sug.amountMinor, currency)}
-                        </span>
-
-                        {sug.fromUid === user.uid && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => {
-                              setActiveSuggestion(sug);
-                              setIsSettlementModalOpen(true);
-                            }}
-                          >
-                            Settle Now
-                          </Button>
-                        )}
-
-                        {sug.toUid === user.uid && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleSendReminder(sug.fromUid, sug.amountMinor)}
-                            leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
-                          >
-                            Send Reminder
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Member Ledger Breakdown */}
-          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white mb-4">
-              👥 Individual Member Totals
-            </h3>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {Object.entries(financialOverview.memberSummaries).map(([uid, summary]) => {
                 const member = event.members[uid];
+                const owesYou = debtsOwedToCurrentUser[uid] || 0;
+                const youOwe = userOwesMember[uid] || 0;
+
                 return (
                   <div
                     key={uid}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-2"
+                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-2.5 transition-all"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -1424,6 +1492,52 @@ export const EventDetailsPage: React.FC = () => {
                         </span>
                       </div>
                     </div>
+
+                    {/* Debtor Reminder Button (Section 8.2) */}
+                    {owesYou > 0 && uid !== user.uid && (
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                          Owes you {formatCurrency(owesYou, currency)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={Boolean(sendingReminders[uid])}
+                          isLoading={Boolean(sendingReminders[uid])}
+                          onClick={() => handleSendReminder(uid, owesYou)}
+                          leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
+                          className="text-xs py-1 px-2.5 rounded-xl border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/20 shadow-none"
+                        >
+                          Send Reminder
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Creditor Settle Action */}
+                    {youOwe > 0 && uid !== user.uid && (
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                          You owe {formatCurrency(youOwe, currency)}
+                        </span>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            setActiveSuggestion({
+                              fromUid: user.uid,
+                              fromName: user.displayName,
+                              toUid: uid,
+                              toName: member?.displayName || summary.displayName,
+                              amountMinor: youOwe,
+                            });
+                            setIsSettlementModalOpen(true);
+                          }}
+                          className="text-xs py-1 px-2.5 rounded-xl"
+                        >
+                          Settle Now
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

@@ -256,7 +256,7 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'displayName', 'email', 'username', 'createdAt']) &&
-             data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'username', 'createdAt', 'serverCreatedAt', 'preferences', 'discoverable']) &&
+             data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'username', 'createdAt', 'serverCreatedAt', 'updatedAt', 'preferences', 'discoverable']) &&
              data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
              data.email is string && data.email.size() <= 150 &&
@@ -266,6 +266,7 @@ service cloud.firestore {
              data.createdAt is number &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2000 && (data.photoURL.size() == 0 || isValidUrl(data.photoURL)))) &&
              (!('serverCreatedAt' in data) || data.serverCreatedAt is timestamp || data.serverCreatedAt is number) &&
+             (!('updatedAt' in data) || data.updatedAt is number) &&
              (!('discoverable' in data) || data.discoverable is bool) &&
              (!('preferences' in data) || isValidPreferences(data.preferences));
     }
@@ -327,7 +328,7 @@ service cloud.firestore {
 
     function isValidInvitationLink(data) {
       return data.keys().hasAll(['token', 'eventId', 'eventName', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'usesCount']) &&
-             data.keys().hasOnly(['token', 'eventId', 'eventName', 'eventEmoji', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'allowedItemIds', 'revoked', 'usesCount', 'maxUses', 'expiresAt']) &&
+             data.keys().hasOnly(['token', 'eventId', 'eventName', 'eventEmoji', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'allowedItemIds', 'availableSlots', 'revoked', 'usesCount', 'maxUses', 'expiresAt']) &&
              data.token is string && data.token.size() >= 1 && data.token.size() <= 128 &&
              data.eventId is string && data.eventId.size() >= 1 && data.eventId.size() <= 128 &&
              data.eventName is string && data.eventName.size() >= 1 && data.eventName.size() <= 100 &&
@@ -338,6 +339,7 @@ service cloud.firestore {
              data.usesCount is number && data.usesCount >= 0 &&
              (!('eventEmoji' in data) || (data.eventEmoji is string && data.eventEmoji.size() <= 20)) &&
              (!('allowedItemIds' in data) || (data.allowedItemIds is list && data.allowedItemIds.size() <= 200)) &&
+             (!('availableSlots' in data) || (data.availableSlots is list && data.availableSlots.size() <= 50)) &&
              (!('revoked' in data) || data.revoked is bool) &&
              (!('maxUses' in data) || (data.maxUses is number && data.maxUses >= 1)) &&
              (!('expiresAt' in data) || data.expiresAt is number);
@@ -637,8 +639,8 @@ service cloud.firestore {
 
     // 6. Event Shareable Invitation Links
     match /eventInvitationLinks/{linkId} {
-      // Authenticated users can read or query links by token
-      allow read: if isAuthenticated();
+      // Anyone with an invitation link can read/resolve the invitation token
+      allow read: if true;
 
       // Event members or host can generate invitation links for their event
       allow create: if isAuthenticated() &&
@@ -685,12 +687,14 @@ service cloud.firestore {
 
     // 7. Events & Subcollections
     match /events/{eventId} {
-      // Read allowed if user is a member/host of the event, or if event has a join code
+      // Read allowed if user is a member/host of the event, or if event has a join code,
+      // or if authenticated user is reading an active event document to view slots / join
       allow read: if isAuthenticated() &&
                      (
                        request.auth.uid in resource.data.members ||
                        request.auth.uid == resource.data.hostUid ||
-                       resource.data.joinCode != null
+                       resource.data.joinCode != null ||
+                       (!('deleted' in resource.data) || resource.data.deleted == false)
                      );
 
       // Host creates event and must include themselves in members map

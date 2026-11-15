@@ -7,6 +7,7 @@ export interface UserProfile {
   photoURL?: string;
   username: string; // unique lowercase e.g. "krish"
   createdAt: number;
+  updatedAt?: number;
   preferences?: {
     theme?: 'light' | 'dark' | 'system';
     currency?: string;
@@ -72,6 +73,7 @@ export interface EventInvitationLink {
   createdAt: number;
   scope: 'full' | 'selected_items';
   allowedItemIds?: string[]; // Item IDs allowed if scope === 'selected_items'
+  availableSlots?: Array<{ id: string; placeholderName: string }>;
   revoked?: boolean;
   maxUses?: number;
   usesCount: number;

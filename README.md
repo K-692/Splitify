@@ -80,24 +80,30 @@ Splitify adopts an **Item-First architecture** designed for speed and flexibilit
 - **Event Deletion (Host Only):** Soft-deletion confirmation modal with immediate removal.
 - **Voluntary Leave (Members):** Members can leave an event voluntarily. Hosts cannot kick members. If an unsettled balance exists, a clear warning is displayed. On leaving, the member's claimed person slot is automatically released.
 
-### 8. 🏷️ Splitify Handle Renaming
-- Users can update their `@handle` in Profile/Settings.
-- Atomic Firestore transaction enforces case-insensitive uniqueness in `usernames/{handle.toLowerCase()}` and cleans up the previous handle.
+### 8. 🏷️ Splitify Handle Renaming & Smart Suggestions
+- **Unlimited Renaming:** Users can update their `@handle` in Profile/Settings whenever they choose.
+- **Smart Handle Suggestions:** When a requested handle is unavailable, Splitify dynamically generates candidate suggestions derived from the user's name and handle, verifying real-time availability in Firestore.
+- **Atomic Firestore Transactions:** Ensures handle reservation, old handle release, and profile updates occur atomically and enforce case-insensitive uniqueness in `usernames/{handle.toLowerCase()}` without permission errors.
 
-### 7. ⚖️ Flexible & Exact Splitting
+### 9. ⚖️ Flexible & Exact Splitting with Auto-Balance
 - **Equal Split (Default):** Divides cost equally among selected participants or slots with deterministic integer minor-unit rounding (zero remainder loss).
-- **Exact Amount Split:** Custom amounts per participant with real-time balance validation.
+- **Exact Amount Split with Auto-Distribution:** When entering custom amounts, Splitify automatically and deterministically distributes the remaining unassigned balance in minor currency units (paise) across unedited participants, preventing mathematical discrepancies. Manual edits are preserved with one-click "Reset to Auto" controls.
 
-### 8. 📊 Financial Dashboard & Debt Simplification
-- **Event Summary:** Total Expense, Your Share, and Net Position ("You're Owed" / "You Owe").
-- **Individual Spending Ledger:** Member-by-member breakdown of amount spent, fair share, and net balance.
-- **Who Pays Whom:** Greedy debt-simplification algorithm generates the minimal number of direct settlement transactions.
-- **💸 Settled! Flow:** One-click settlement dialog (full or partial amounts) recording transactions under a system-generated `💸 Settlements` item without distorting Total Expense.
-- **🔔 In-App Payment Reminders:** Creditors can send instantaneous reminder notifications to debtors.
+### 10. 🔍 Dedicated In-Event Expense Search
+- **Real-Time Search Bar:** Positioned directly above the expense hierarchy inside every event.
+- **Deep Multilevel Matching:** Matches standalone items, categories, subitem names, comments, and payer names case-insensitively with automatic category expansion.
+- **Clean Empty State:** Clear "No matching expenses found" feedback with a one-click "Clear Search" button.
 
-### 9. 🤝 Friends & User Discovery
+### 11. 📊 Financial Dashboard & Targeted Debt Reminders
+- **Individual Member Totals:** Clear, member-by-member breakdown of amount spent, fair share, and net balance with zero-clutter layout.
+- **Targeted Reminders:** Debtors who owe money directly to the current user display an instant "Send Reminder" button with duplicate-click protection.
+- **Settle Now Flow:** One-click settlement dialog recording transactions under system settlements without distorting event expenses.
+
+### 12. 🤝 Friends & User Discovery
 - Search users by username handle (`@username`).
+- Reliable profile lookup directly via UID (`getUserByUid` / `getUsersByUids`) ensuring friend names, handles, and avatars always appear instantly.
 - Send, accept, decline, and cancel friend requests.
+- Direct in-app event invitations with full access, duplicate prevention, and automatic slot linking for expected friends.
 - Direct in-app event invitations to friends.
 
 ### 10. 🎨 Brand Identity, Mobile Responsiveness & Polished UI/UX
