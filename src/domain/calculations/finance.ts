@@ -3,6 +3,7 @@ import {
   EventItem,
   ExpenseEntry,
   SettlementEntry,
+  EventSlot,
   MemberFinancialSummary,
   SettlementSuggestion,
   EventFinancialOverview,
@@ -82,7 +83,8 @@ export function calculateEventFinancialOverview(
   expenses: ExpenseEntry[],
   settlements: SettlementEntry[] = [],
   currentUserId?: string,
-  items: EventItem[] = []
+  items: EventItem[] = [],
+  slots?: Record<string, EventSlot>
 ): EventFinancialOverview {
   // 1. Collect all active ordinary expenses from items and subitems
   const unifiedExpenses: UnifiedExpense[] = [];
@@ -147,13 +149,32 @@ export function calculateEventFinancialOverview(
     };
   }
 
-  // Also account for any participant/payer not currently in members map
+  // Also pre-initialize any unclaimed slot placeholders
+  if (slots) {
+    for (const [slotId, slot] of Object.entries(slots)) {
+      if (!slot.isClaimed && !memberSummaries[slotId]) {
+        memberSummaries[slotId] = {
+          uid: slotId,
+          displayName: `${slot.placeholderName} (Pending)`,
+          spentMinor: 0,
+          shareMinor: 0,
+          settledPaidMinor: 0,
+          settledReceivedMinor: 0,
+          netBalanceMinor: 0,
+        };
+      }
+    }
+  }
+
+  // Also account for any participant/payer not currently in members map or slots
   const ensureMember = (uid: string, fallbackName?: string) => {
     if (!uid) return;
     if (!memberSummaries[uid]) {
+      const slot = slots?.[uid];
+      const slotName = slot ? `${slot.placeholderName} (Pending)` : undefined;
       memberSummaries[uid] = {
         uid,
-        displayName: fallbackName || 'Former Member',
+        displayName: fallbackName || slotName || 'Former Member',
         spentMinor: 0,
         shareMinor: 0,
         settledPaidMinor: 0,

@@ -69,8 +69,43 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   onSave,
   onSaveCategoryWithSubitems,
 }) => {
-  const memberList = Object.values(event.members || {});
   const isEditing = Boolean(initialExpense || initialItem);
+
+  // List of assignable people: all joined members + all unclaimed expected person slots
+  const assignablePeople = React.useMemo(() => {
+    const list: Array<{
+      id: string;
+      displayName: string;
+      photoURL?: string;
+      isSlot: boolean;
+      placeholderName?: string;
+    }> = [];
+
+    // Joined members
+    for (const m of Object.values(event.members || {})) {
+      list.push({
+        id: m.uid,
+        displayName: getFirstName(m.displayName),
+        photoURL: m.photoURL,
+        isSlot: false,
+      });
+    }
+
+    // Unclaimed expected person slots
+    for (const s of Object.values(event.slots || {})) {
+      if (!s.isClaimed) {
+        list.push({
+          id: s.id,
+          displayName: `${s.placeholderName} (Pending)`,
+          photoURL: undefined,
+          isSlot: true,
+          placeholderName: s.placeholderName,
+        });
+      }
+    }
+
+    return list;
+  }, [event.members, event.slots]);
 
   // Top checkbox: "Do you have subitems? ☑"
   const [hasSubitems, setHasSubitems] = useState(false);
@@ -110,7 +145,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setSplitBy(source.splitBy || 'equal');
       setParticipants(source.participants && source.participants.length > 0
         ? source.participants
-        : memberList.map((m) => m.uid));
+        : assignablePeople.map((p) => p.id));
       setComment(source.comment || '');
 
       const initialShares: Record<string, string> = {};
@@ -130,12 +165,12 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setExpenseDate(getTodayLocalDateString());
       setPaidBy(currentUser.uid);
       setSplitBy('equal');
-      const allUids = memberList.map((m) => m.uid);
-      setParticipants(allUids);
+      const allIds = assignablePeople.map((p) => p.id);
+      setParticipants(allIds);
       setCustomSharesInput({});
       setComment('');
     }
-  }, [isOpen, initialExpense, initialItem, currentUser.uid]);
+  }, [isOpen, initialExpense, initialItem, currentUser.uid, assignablePeople]);
 
   // Update emoji on name change
   const handleNameChange = (val: string) => {
@@ -450,7 +485,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 {stagedSubitems.map((sub, idx) => (
                   <div
                     key={sub.id || idx}
-                    className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-700 text-xs"
+                    className="flex items-center justify-between p-2 rounded-xl bg-slate-50/70 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span>{sub.emoji}</span>
@@ -526,27 +561,29 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
               </div>
             </div>
 
-            {/* Paid By (First Names) */}
+            {/* Paid By (Members + Expected People) */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Paid by
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {memberList.map((member) => (
+                {assignablePeople.map((person) => (
                   <button
-                    key={member.uid}
+                    key={person.id}
                     type="button"
-                    onClick={() => setPaidBy(member.uid)}
+                    onClick={() => setPaidBy(person.id)}
                     className={`flex items-center gap-2 p-2 rounded-2xl border text-left transition-all ${
-                      paidBy === member.uid
+                      paidBy === person.id
                         ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750'
                     }`}
                   >
-                    <Avatar src={member.photoURL} name={getFirstName(member.displayName)} size="xs" />
-                    <span className="text-xs font-bold truncate">
-                      {getFirstName(member.displayName)} {member.uid === currentUser.uid ? '(You)' : ''}
-                    </span>
+                    <Avatar src={person.photoURL} name={person.displayName} size="xs" />
+                    <div className="truncate">
+                      <span className="text-xs font-bold truncate block">
+                        {person.displayName} {person.id === currentUser.uid ? '(You)' : ''}
+                      </span>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -583,46 +620,46 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
               </div>
             </div>
 
-            {/* Participants Selection (First names) */}
+            {/* Participants Selection (Members + Expected People) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between pt-1">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Participants ({participants.length}/{memberList.length})
+                  Participants ({participants.length}/{assignablePeople.length})
                 </label>
                 <button
                   type="button"
                   onClick={() => {
-                    if (participants.length === memberList.length) {
+                    if (participants.length === assignablePeople.length) {
                       setParticipants([currentUser.uid]);
                     } else {
-                      setParticipants(memberList.map((m) => m.uid));
+                      setParticipants(assignablePeople.map((p) => p.id));
                     }
                   }}
                   className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
                 >
-                  {participants.length === memberList.length ? 'Deselect All' : 'Select All'}
+                  {participants.length === assignablePeople.length ? 'Deselect All' : 'Select All'}
                 </button>
               </div>
 
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                {memberList.map((member) => {
-                  const isSelected = participants.includes(member.uid);
+                {assignablePeople.map((person) => {
+                  const isSelected = participants.includes(person.id);
                   const equalShareMinor = isSelected && costMinor > 0
-                    ? calculateEqualShares(costMinor, participants)[member.uid] || 0
+                    ? calculateEqualShares(costMinor, participants)[person.id] || 0
                     : 0;
 
                   return (
                     <div
-                      key={member.uid}
+                      key={person.id}
                       className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
                         isSelected
                           ? 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
-                          : 'border-slate-100 dark:border-slate-800/60 opacity-60 bg-slate-50 dark:bg-slate-850'
+                          : 'border-slate-100 dark:border-slate-800/60 opacity-60 bg-slate-50 dark:bg-slate-800/40'
                       }`}
                     >
                       <button
                         type="button"
-                        onClick={() => toggleParticipant(member.uid)}
+                        onClick={() => toggleParticipant(person.id)}
                         className="flex items-center gap-2.5 flex-1 text-left"
                       >
                         <div
@@ -634,10 +671,17 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                         >
                           {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                         </div>
-                        <Avatar src={member.photoURL} name={getFirstName(member.displayName)} size="xs" />
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          {getFirstName(member.displayName)}
-                        </span>
+                        <Avatar src={person.photoURL} name={person.displayName} size="xs" />
+                        <div className="truncate">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
+                            {person.displayName}
+                          </span>
+                          {person.isSlot && (
+                            <span className="text-[10px] text-amber-500 dark:text-amber-400 font-semibold block">
+                              Unclaimed spot
+                            </span>
+                          )}
+                        </div>
                       </button>
 
                       {/* Share indicator or editable input */}
@@ -656,11 +700,11 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                value={customSharesInput[member.uid] || ''}
+                                value={customSharesInput[person.id] || ''}
                                 onChange={(e) =>
                                   setCustomSharesInput({
                                     ...customSharesInput,
-                                    [member.uid]: e.target.value,
+                                    [person.id]: e.target.value,
                                   })
                                 }
                                 className="w-20 px-2 py-1 text-right text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500"

@@ -15,6 +15,7 @@ import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
 import { getFirstName } from '@/utils/name';
 import { formatDisplayExpenseDate } from '@/utils/date';
+import { getEmojiForName } from '@/utils/emoji';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -122,7 +123,7 @@ export const EventDetailsPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Compute authoritative financial overview (includes standalone items and category subitems)
+  // Compute authoritative financial overview (includes standalone items, category subitems, and pending person slots)
   const financialOverview = useMemo(() => {
     if (!event) return null;
     return calculateEventFinancialOverview(
@@ -130,9 +131,52 @@ export const EventDetailsPage: React.FC = () => {
       expenses,
       settlements,
       user?.uid,
-      items
+      items,
+      event.slots || {}
     );
   }, [event, expenses, settlements, user?.uid, items]);
+
+  const getPersonDisplayName = (id: string): string => {
+    if (!id || !event) return '';
+    if (event.members[id]) return getFirstName(event.members[id].displayName);
+    if (event.slots?.[id]) return `${event.slots[id].placeholderName} (Pending)`;
+    return 'Unknown';
+  };
+
+  const [isEditCategoryModalOpen, setIsEditCategoryModalOpen] = useState(false);
+  const [editingCategoryItem, setEditingCategoryItem] = useState<EventItem | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [editingCategoryEmoji, setEditingCategoryEmoji] = useState('📁');
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+
+  const handleOpenEditCategory = (item: EventItem) => {
+    setEditingCategoryItem(item);
+    setEditingCategoryName(item.name);
+    setEditingCategoryEmoji(item.emoji || '📁');
+    setIsEditCategoryModalOpen(true);
+  };
+
+  const handleSaveCategoryEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!event || !user || !editingCategoryItem || !editingCategoryName.trim()) return;
+    setIsSavingCategory(true);
+    try {
+      await dataService.updateItemName(
+        event.id,
+        editingCategoryItem.id,
+        editingCategoryName.trim(),
+        editingCategoryEmoji,
+        user
+      );
+      showToast('Category updated');
+      setIsEditCategoryModalOpen(false);
+      setEditingCategoryItem(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update category');
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
 
   // Map expenses by itemId
   const expensesByItem = useMemo(() => {
@@ -860,11 +904,20 @@ export const EventDetailsPage: React.FC = () => {
                             setEditingItem(null);
                             setIsExpenseModalOpen(true);
                           }}
-                          className="!py-1 !px-2.5 text-xs"
+                          className="!py-1 !px-2.5 text-xs font-bold"
                         >
                           <Plus className="w-3.5 h-3.5 mr-1" />
                           Add Subitem
                         </Button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditCategory(item)}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Edit Category"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
 
                         <button
                           type="button"
@@ -888,7 +941,6 @@ export const EventDetailsPage: React.FC = () => {
                           itemExpenses.map((expense) => {
                             const isSelected = Boolean(selectedExpenseIds[expense.id]);
                             const isAuditExpanded = Boolean(expandedAuditLogs[expense.id]);
-                            const payer = event.members[expense.paidBy];
 
                             return (
                               <div
@@ -923,7 +975,7 @@ export const EventDetailsPage: React.FC = () => {
                                         <span>
                                           Paid by{' '}
                                           <strong className="text-slate-700 dark:text-slate-200">
-                                            {getFirstName(payer?.displayName || expense.createdByName || 'Unknown')}
+                                            {getPersonDisplayName(expense.paidBy) || getFirstName(expense.createdByName || 'Unknown')}
                                           </strong>
                                         </span>
                                         {expense.expenseDate && (
@@ -1080,7 +1132,6 @@ export const EventDetailsPage: React.FC = () => {
               // ----------------------------------------------------
               // C. STANDALONE ITEM (Item-First Direct Expense)
               // ----------------------------------------------------
-              const payer = item.paidBy ? event.members[item.paidBy] : null;
               const isAuditExpanded = Boolean(expandedAuditLogs[item.id]);
 
               return (
@@ -1107,7 +1158,7 @@ export const EventDetailsPage: React.FC = () => {
                           <span>
                             Paid by{' '}
                             <strong className="text-slate-700 dark:text-slate-200 font-bold">
-                              {getFirstName(payer?.displayName || item.createdByName || 'Unknown')}
+                              {getPersonDisplayName(item.paidBy || '') || getFirstName(item.createdByName || 'Unknown')}
                             </strong>
                           </span>
                           {item.expenseDate && (
@@ -1504,7 +1555,6 @@ export const EventDetailsPage: React.FC = () => {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         event={event}
-        items={items}
       />
 
       {/* Slots Modal */}
@@ -1576,6 +1626,57 @@ export const EventDetailsPage: React.FC = () => {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit Category Modal */}
+      <Modal
+        isOpen={isEditCategoryModalOpen}
+        onClose={() => {
+          setIsEditCategoryModalOpen(false);
+          setEditingCategoryItem(null);
+        }}
+        title="Edit Category"
+        emoji={editingCategoryEmoji || '📁'}
+        maxWidth="sm"
+      >
+        <form onSubmit={handleSaveCategoryEdit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+              Category Name
+            </label>
+            <input
+              type="text"
+              value={editingCategoryName}
+              onChange={(e) => {
+                setEditingCategoryName(e.target.value);
+                setEditingCategoryEmoji(getEmojiForName(e.target.value));
+              }}
+              required
+              className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              autoFocus
+            />
+            <span className="text-[11px] text-slate-400 mt-1.5 block">
+              Emoji is automatically updated based on the category name.
+            </span>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={() => {
+                setIsEditCategoryModalOpen(false);
+                setEditingCategoryItem(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="md" isLoading={isSavingCategory}>
+              Save Changes
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

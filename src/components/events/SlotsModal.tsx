@@ -144,7 +144,7 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
                     className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
                       slot.isClaimed
                         ? 'border-emerald-200/80 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20'
-                        : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-850'
+                        : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/80'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">

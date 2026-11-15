@@ -71,4 +71,69 @@ describe('Individual Person Slots & Handle Renaming', () => {
       'Claimed slots cannot be deleted'
     );
   });
+
+  it('should split expense with an unclaimed person slot and migrate expenses when claimed', async () => {
+    const eventId = await dataService.createEvent('Road Trip', mockUser);
+    const slot = await dataService.createPersonSlot(eventId, 'Ayush');
+    expect(slot.isClaimed).toBe(false);
+
+    // Host creates an expense split between Krishnendu (user_test_1) and Ayush (slot.id)
+    const itemId = await dataService.createExpenseItem(
+      {
+        eventId,
+        name: 'Petrol & Tolls',
+        costMinor: 200000, // ₹2000
+        paidBy: mockUser.uid,
+        splitBy: 'equal',
+        participants: [mockUser.uid, slot.id],
+        customShares: {
+          [mockUser.uid]: 100000,
+          [slot.id]: 100000,
+        },
+      },
+      mockUser
+    );
+
+    // Verify item has slot.id as participant
+    const itemsBefore = await dataService.getItems(eventId);
+    const petrolItem = itemsBefore.find((i) => i.id === itemId);
+    expect(petrolItem).toBeDefined();
+    expect(petrolItem?.participants).toContain(slot.id);
+    expect(petrolItem?.shares?.[slot.id]).toBe(100000);
+
+    // Now Ayush joins Splitify and claims his spot
+    const ayushUser: UserProfile = {
+      uid: 'user_ayush_456',
+      displayName: 'Ayush Sharma',
+      email: 'ayush@example.com',
+      username: 'ayush_s',
+      createdAt: Date.now(),
+    };
+
+    await dataService.claimPersonSlot(eventId, slot.id, ayushUser);
+
+    // Verify expenses were migrated to Ayush's real UID
+    const itemsAfter = await dataService.getItems(eventId);
+    const migratedItem = itemsAfter.find((i) => i.id === itemId);
+    expect(migratedItem?.participants).not.toContain(slot.id);
+    expect(migratedItem?.participants).toContain(ayushUser.uid);
+    expect(migratedItem?.shares?.[ayushUser.uid]).toBe(100000);
+    expect(migratedItem?.shares?.[slot.id]).toBeUndefined();
+  });
+
+  it('should update category name and record audit log', async () => {
+    const eventId = await dataService.createEvent('Food Fest', mockUser);
+    const itemId = await dataService.createItem(eventId, 'Snacks');
+    await dataService.convertItemToCategory(eventId, itemId, mockUser);
+
+    // Rename category to "Evening Snacks & Chai"
+    await dataService.updateItemName(eventId, itemId, 'Evening Snacks & Chai', '☕', mockUser);
+
+    const items = await dataService.getItems(eventId);
+    const updated = items.find((i) => i.id === itemId);
+    expect(updated?.name).toBe('Evening Snacks & Chai');
+    expect(updated?.emoji).toBe('☕');
+    expect(updated?.auditLogs?.length).toBeGreaterThan(0);
+    expect(updated?.auditLogs?.[updated.auditLogs.length - 1].summary).toContain('Category renamed');
+  });
 });

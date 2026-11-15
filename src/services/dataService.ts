@@ -328,6 +328,15 @@ export const dataService = {
   // ==========================================
   // ITEMS (Expense Buckets & Settlements Item)
   // ==========================================
+  async getItems(eventId: string): Promise<EventItem[]> {
+    if (!isFirebaseConfigured() || !db) {
+      const all = getLocal<EventItem[]>(`items_${eventId}`, []);
+      return all.filter((i) => !i.deleted);
+    }
+    const snap = await getDocs(query(collection(db, 'events', eventId, 'items'), orderBy('createdAt', 'asc')));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id } as EventItem)).filter((i) => !i.deleted);
+  },
+
   subscribeItems(eventId: string, callback: (items: EventItem[]) => void): () => void {
     if (!isFirebaseConfigured() || !db) {
       const load = () => {
@@ -390,7 +399,7 @@ export const dataService = {
       expenseDate?: string;
     },
     user: UserProfile,
-    eventMembers: Record<string, any>
+    eventMembers: Record<string, any> = {}
   ): Promise<string> {
     const { eventId, name, costMinor, paidBy, splitBy, participants, customShares, comment } = params;
     const emoji = getEmojiForName(name);
@@ -450,7 +459,7 @@ export const dataService = {
       itemId = ref.id;
     }
 
-    for (const memberUid of Object.keys(eventMembers)) {
+    for (const memberUid of Object.keys(eventMembers || {})) {
       if (memberUid !== user.uid) {
         await dataService.createNotification({
           recipientUid: memberUid,
@@ -707,7 +716,7 @@ export const dataService = {
       }
     }
 
-    for (const memberUid of Object.keys(eventMembers)) {
+    for (const memberUid of Object.keys(eventMembers || {})) {
       if (memberUid !== user.uid) {
         await dataService.createNotification({
           recipientUid: memberUid,
@@ -723,25 +732,78 @@ export const dataService = {
     }
   },
 
-  async updateItemName(eventId: string, itemId: string, newName: string): Promise<void> {
-    const emoji = getEmojiForName(newName);
+  async updateItemName(
+    eventId: string,
+    itemId: string,
+    newName: string,
+    customEmoji?: string,
+    user?: UserProfile
+  ): Promise<void> {
+    const emoji = customEmoji || getEmojiForName(newName);
+    const now = Date.now();
+    const formattedTimestamp = formatAuditTimestamp(now);
+    const authorFirstName = user ? getFirstName(user.displayName) : 'Member';
+
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx !== -1) {
+        const prevName = items[idx].name;
         items[idx].name = newName;
         items[idx].emoji = emoji;
-        items[idx].updatedAt = Date.now();
+        items[idx].updatedAt = now;
+        if (user) {
+          items[idx].lastModifiedBy = user.uid;
+          items[idx].lastModifiedByName = authorFirstName;
+          items[idx].lastModifiedAt = now;
+          const auditLog = {
+            id: 'log_' + now,
+            type: 'edited' as const,
+            byUid: user.uid,
+            byName: authorFirstName,
+            timestamp: now,
+            formattedTimestamp,
+            summary: `Category renamed from "${prevName}" to "${newName}"`,
+            previousValues: { name: prevName },
+            newValues: { name: newName },
+          };
+          items[idx].auditLogs = [...(items[idx].auditLogs || []), auditLog];
+        }
         setLocal(`items_${eventId}`, items);
       }
       return;
     }
 
-    await updateDoc(doc(db, 'events', eventId, 'items', itemId), {
+    const itemRef = doc(db, 'events', eventId, 'items', itemId);
+    const snap = await getDoc(itemRef);
+    const existing = snap.exists() ? (snap.data() as EventItem) : null;
+    const prevName = existing ? existing.name : '';
+
+    const updatePayload: any = {
       name: newName,
       emoji,
-      updatedAt: Date.now(),
-    });
+      updatedAt: now,
+    };
+
+    if (user) {
+      updatePayload.lastModifiedBy = user.uid;
+      updatePayload.lastModifiedByName = authorFirstName;
+      updatePayload.lastModifiedAt = now;
+      const auditLog = {
+        id: 'log_' + now,
+        type: 'edited' as const,
+        byUid: user.uid,
+        byName: authorFirstName,
+        timestamp: now,
+        formattedTimestamp,
+        summary: `Category renamed from "${prevName}" to "${newName}"`,
+        previousValues: { name: prevName },
+        newValues: { name: newName },
+      };
+      updatePayload.auditLogs = [...(existing?.auditLogs || []), auditLog];
+    }
+
+    await updateDoc(itemRef, sanitizeForFirestore(updatePayload));
   },
 
   async deleteItem(eventId: string, itemId: string, user: UserProfile): Promise<void> {
@@ -886,7 +948,7 @@ export const dataService = {
       expenseDate?: string;
     },
     user: UserProfile,
-    eventMembers: Record<string, any>
+    eventMembers: Record<string, any> = {}
   ): Promise<string> {
     const { eventId, itemId, name, costMinor, paidBy, splitBy, participants, customShares, comment } = params;
 
@@ -946,7 +1008,7 @@ export const dataService = {
     }
 
     // Notify other event members
-    for (const memberUid of Object.keys(eventMembers)) {
+    for (const memberUid of Object.keys(eventMembers || {})) {
       if (memberUid !== user.uid) {
         await dataService.createNotification({
           recipientUid: memberUid,
@@ -1081,7 +1143,7 @@ export const dataService = {
     }
 
     // Notify other event members
-    for (const memberUid of Object.keys(eventMembers)) {
+    for (const memberUid of Object.keys(eventMembers || {})) {
       if (memberUid !== user.uid) {
         await dataService.createNotification({
           recipientUid: memberUid,
@@ -1144,7 +1206,7 @@ export const dataService = {
     }
 
     // Notify members
-    for (const memberUid of Object.keys(eventMembers)) {
+    for (const memberUid of Object.keys(eventMembers || {})) {
       if (memberUid !== user.uid) {
         await dataService.createNotification({
           recipientUid: memberUid,
@@ -1204,7 +1266,7 @@ export const dataService = {
       await batch.commit();
     }
 
-    for (const memberUid of Object.keys(eventMembers)) {
+    for (const memberUid of Object.keys(eventMembers || {})) {
       if (memberUid !== user.uid) {
         await dataService.createNotification({
           recipientUid: memberUid,
@@ -1879,6 +1941,10 @@ export const dataService = {
         setLocal('invitation_links', links);
       }
 
+      if (slotId) {
+        await dataService.migrateSlotExpenses(event.id, slotId, user);
+      }
+
       return { event, link };
     }
 
@@ -1893,6 +1959,10 @@ export const dataService = {
     await updateDoc(linkRef, {
       usesCount: (link.usesCount || 0) + 1,
     });
+
+    if (slotId) {
+      await dataService.migrateSlotExpenses(event.id, slotId, user);
+    }
 
     return { event, link };
   },
@@ -1995,6 +2065,7 @@ export const dataService = {
         all[idx].updatedAt = Date.now();
         setLocal('events', all);
       }
+      await dataService.migrateSlotExpenses(eventId, slotId, user);
       return;
     }
 
@@ -2004,6 +2075,143 @@ export const dataService = {
       [`members.${user.uid}.slotId`]: slotId,
       updatedAt: Date.now(),
     }));
+
+    await dataService.migrateSlotExpenses(eventId, slotId, user);
+  },
+
+  async migrateSlotExpenses(eventId: string, slotId: string, user: UserProfile): Promise<void> {
+    const userFirstName = getFirstName(user.displayName);
+    const now = Date.now();
+
+    if (!isFirebaseConfigured() || !db) {
+      // LocalStorage migration
+      const items = getLocal<EventItem[]>(`items_${eventId}`, []);
+      let itemsChanged = false;
+      for (const item of items) {
+        let changed = false;
+        if (item.paidBy === slotId) {
+          item.paidBy = user.uid;
+          item.createdByName = userFirstName;
+          changed = true;
+        }
+        if (item.participants?.includes(slotId)) {
+          item.participants = item.participants.map((p) => (p === slotId ? user.uid : p));
+          changed = true;
+        }
+        if (item.shares && item.shares[slotId] !== undefined) {
+          item.shares[user.uid] = item.shares[slotId];
+          delete item.shares[slotId];
+          changed = true;
+        }
+        if (changed) {
+          item.updatedAt = now;
+          itemsChanged = true;
+        }
+      }
+      if (itemsChanged) setLocal(`items_${eventId}`, items);
+
+      const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
+      let expensesChanged = false;
+      for (const exp of expenses) {
+        let changed = false;
+        if (exp.paidBy === slotId) {
+          exp.paidBy = user.uid;
+          exp.createdByName = userFirstName;
+          changed = true;
+        }
+        if (exp.participants?.includes(slotId)) {
+          exp.participants = exp.participants.map((p) => (p === slotId ? user.uid : p));
+          changed = true;
+        }
+        if (exp.shares && exp.shares[slotId] !== undefined) {
+          exp.shares[user.uid] = exp.shares[slotId];
+          delete exp.shares[slotId];
+          changed = true;
+        }
+        if (changed) {
+          exp.lastModifiedBy = user.uid;
+          exp.lastModifiedByName = userFirstName;
+          exp.lastModifiedAt = now;
+          expensesChanged = true;
+        }
+      }
+      if (expensesChanged) setLocal(`expenses_${eventId}`, expenses);
+      return;
+    }
+
+    // Firestore migration
+    try {
+      const itemsColl = collection(db, 'events', eventId, 'items');
+      const itemsSnap = await getDocs(itemsColl);
+      for (const docSnap of itemsSnap.docs) {
+        const item = docSnap.data() as EventItem;
+        let needsUpdate = false;
+        let newPaidBy = item.paidBy;
+        let newParticipants = item.participants;
+        let newShares = item.shares ? { ...item.shares } : undefined;
+
+        if (item.paidBy === slotId) {
+          newPaidBy = user.uid;
+          needsUpdate = true;
+        }
+        if (item.participants?.includes(slotId)) {
+          newParticipants = item.participants.map((p) => (p === slotId ? user.uid : p));
+          needsUpdate = true;
+        }
+        if (newShares && newShares[slotId] !== undefined) {
+          newShares[user.uid] = newShares[slotId];
+          delete newShares[slotId];
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          await updateDoc(docSnap.ref, sanitizeForFirestore({
+            paidBy: newPaidBy,
+            participants: newParticipants,
+            shares: newShares,
+            lastModifiedBy: user.uid,
+            lastModifiedByName: userFirstName,
+            lastModifiedAt: now,
+            updatedAt: now,
+          }));
+        }
+      }
+
+      const expensesColl = collection(db, 'events', eventId, 'expenses');
+      const expSnap = await getDocs(expensesColl);
+      for (const docSnap of expSnap.docs) {
+        const exp = docSnap.data() as ExpenseEntry;
+        let needsUpdate = false;
+        let newPaidBy = exp.paidBy;
+        let newParticipants = exp.participants;
+        let newShares = exp.shares ? { ...exp.shares } : undefined;
+
+        if (exp.paidBy === slotId) {
+          newPaidBy = user.uid;
+          needsUpdate = true;
+        }
+        if (exp.participants?.includes(slotId)) {
+          newParticipants = exp.participants.map((p) => (p === slotId ? user.uid : p));
+          needsUpdate = true;
+        }
+        if (newShares && newShares[slotId] !== undefined) {
+          newShares[user.uid] = newShares[slotId];
+          delete newShares[slotId];
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          await updateDoc(docSnap.ref, sanitizeForFirestore({
+            paidBy: newPaidBy,
+            participants: newParticipants,
+            shares: newShares,
+            lastModifiedBy: user.uid,
+            lastModifiedByName: userFirstName,
+            lastModifiedAt: now,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to migrate slot expenses:', err);
+    }
   },
 
   // Backwards compatibility aliases
