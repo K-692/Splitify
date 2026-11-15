@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
-import { SplitifyEvent, EventItem, ExpenseEntry } from '@/types';
+import { SplitifyEvent, EventItem, ExpenseEntry, SettlementEntry } from '@/types';
 import { dataService } from '@/services/dataService';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -63,14 +63,17 @@ export const HomePage: React.FC = () => {
     events.forEach((ev) => {
       let itemsList: EventItem[] = [];
       let expensesList: ExpenseEntry[] = [];
+      let settlementsList: SettlementEntry[] = [];
 
       const recalc = () => {
+        const completedSettlements = settlementsList.filter((s) => s.status === 'completed');
         const overview = calculateEventFinancialOverview(
           ev.members,
           expensesList,
-          [],
+          completedSettlements,
           user.uid,
-          itemsList
+          itemsList,
+          ev.slots
         );
         setEventStats((prev) => ({
           ...prev,
@@ -93,7 +96,12 @@ export const HomePage: React.FC = () => {
         recalc();
       });
 
-      unsubs.push(unsubItems, unsubExpenses);
+      const unsubSettlements = dataService.subscribeSettlements(ev.id, (settlements) => {
+        settlementsList = settlements;
+        recalc();
+      });
+
+      unsubs.push(unsubItems, unsubExpenses, unsubSettlements);
     });
 
     return () => {

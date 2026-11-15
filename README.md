@@ -99,17 +99,27 @@ Splitify adopts an **Item-First architecture** designed for speed and flexibilit
 - **Deep Multilevel Matching:** Matches standalone items, categories, subitem names, comments, and payer names case-insensitively with automatic category expansion.
 - **Clean Empty State:** Clear "No matching expenses found" feedback with a one-click "Clear Search" button.
 
-### 11. 📊 Financial Dashboard & Targeted Debt Reminders
-- **Individual Member Totals:** Clear, member-by-member breakdown of amount spent, fair share, and net balance with zero-clutter layout.
-- **Targeted Reminders:** Debtors who owe money directly to the current user display an instant "Send Reminder" button with duplicate-click protection.
-- **Settle Now Flow:** One-click settlement dialog recording transactions under system settlements without distorting event expenses.
+### 11. 💸 Two-Step Settlement Confirmation Flow
+- **Authoritative Ledger Integrity:** Debtor payments do not alter financial balances until verified by the creditor.
+- **Step 1 (Debtor Marks `[ Paid ]`):** Debtor submits payment details (amount, method: UPI/Cash/Bank Transfer/Other, reference number, notes, date, and time). A pending record is created in `events/{eventId}/paymentConfirmations` with status `awaiting_confirmation`. Outstanding debt remains strictly unchanged.
+- **Step 2 (Creditor Verification):** Creditor receives actionable alerts in the event dashboard and notifications with a **`[ Settle Now ]`** button.
+  - **`[ Confirm Receipt ]`:** Instantly records an immutable completed settlement in `events/{eventId}/settlements`, marks the confirmation `confirmed`, and adjusts balances in real time with celebratory visual feedback.
+  - **`[ Not Received ]`:** Rejects the payment claim with an optional note, restores full outstanding debt, and notifies the debtor.
+- **Partial Settlements:** Full support for partial repayments (`amount <= remainingDebt`), accurately reducing the outstanding balance.
+- **No Direct Bypass:** All settlements must pass through the verified two-step confirmation workflow.
 
-### 12. 🤝 Friends & User Discovery
-- Search users by username handle (`@username`).
-- Reliable profile lookup directly via UID (`getUserByUid` / `getUsersByUids`) ensuring friend names, handles, and avatars always appear instantly.
-- Send, accept, decline, and cancel friend requests.
-- Direct in-app event invitations with full access, duplicate prevention, and automatic slot linking for expected friends.
-- Direct in-app event invitations to friends.
+### 12. ⏱️ Chronological Sorting of All Event Entries
+- **Date & Time Picker:** Standalone expenses and subitems record both date (`YYYY-MM-DD`) and time (`HH:mm`), establishing an exact `occurredAt` UTC timestamp.
+- **Unified Chronological Hierarchy:** Standalone items, category subitems, categories (dynamically sorted by their latest active child occurrence), settlements, and pending confirmations are ordered chronologically (newest first).
+- **Consistent Everywhere:** Chronological descending order is strictly maintained in the expense hierarchy, search results, and plain-text export reports.
+
+### 13. 🤝 Friends, Event Invitations & Universal Friend Request Actions
+- **Universal Friend Request Actions:** Reusable `Accept` and `Decline` controls available everywhere an incoming request is displayed: Friends tab (Received Requests), search results (if an incoming request exists), and the Notifications inbox.
+- **Dedicated Event Invitations Section:** The Friends page features 3 dedicated tabs:
+  1. *My Friends* (with direct event invitation modal).
+  2. *Friend Requests* (Received & Sent requests with real-time badges).
+  3. *Event Invitations* (real-time invitations from friends to join events with event emoji, name, inviter first name, date/time, and one-click Accept/Decline actions).
+- **Search Users by Handle:** Real-time lookup with atomic Firestore security rules and profile caching.
 
 ### 10. 🎨 Brand Identity, Mobile Responsiveness & Polished UI/UX
 - Official palette derived from the Splitify logo:

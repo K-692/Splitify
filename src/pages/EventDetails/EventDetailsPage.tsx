@@ -7,7 +7,7 @@ import {
   EventItem,
   ExpenseEntry,
   SettlementEntry,
-  SettlementSuggestion,
+  PaymentConfirmation,
 } from '@/types';
 import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
@@ -16,11 +16,13 @@ import { generatePlainTextExpenseReport } from '@/utils/exportReport';
 import { getFirstName } from '@/utils/name';
 import { formatDisplayExpenseDate } from '@/utils/date';
 import { getEmojiForName } from '@/utils/emoji';
+import { sortItemsChronologicalDesc, sortEntriesChronologicalDesc } from '@/utils/sorting';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { ExpenseModal } from '@/components/expenses/ExpenseModal';
-import { SettlementModal } from '@/components/dashboard/SettlementModal';
+import { PaymentDetailsModal } from '@/components/dashboard/PaymentDetailsModal';
+import { ConfirmPaymentReceiptModal } from '@/components/dashboard/ConfirmPaymentReceiptModal';
 import { BulkDeleteModal } from '@/components/expenses/BulkDeleteModal';
 import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { SlotsModal } from '@/components/events/SlotsModal';
@@ -36,6 +38,7 @@ import {
   History,
   BellRing,
   CheckCircle,
+  CheckCircle2,
   FolderPlus,
   Share2,
   Copy,
@@ -43,6 +46,9 @@ import {
   AlertTriangle,
   Search,
   X,
+  CreditCard,
+  Clock,
+  Check,
 } from 'lucide-react';
 
 export const EventDetailsPage: React.FC = () => {
@@ -55,6 +61,7 @@ export const EventDetailsPage: React.FC = () => {
   const [items, setItems] = useState<EventItem[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [settlements, setSettlements] = useState<SettlementEntry[]>([]);
+  const [paymentConfirmations, setPaymentConfirmations] = useState<PaymentConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Active view tab
@@ -76,8 +83,16 @@ export const EventDetailsPage: React.FC = () => {
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
   const [editingItem, setEditingItem] = useState<EventItem | null>(null);
 
-  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
-  const [activeSuggestion, setActiveSuggestion] = useState<SettlementSuggestion | null>(null);
+  // Two-Step Settlement Modals
+  const [isPaymentDetailsModalOpen, setIsPaymentDetailsModalOpen] = useState(false);
+  const [activeDebtorPayment, setActiveDebtorPayment] = useState<{
+    creditorUid: string;
+    creditorName: string;
+    maxAmountMinor: number;
+  } | null>(null);
+
+  const [isConfirmReceiptModalOpen, setIsConfirmReceiptModalOpen] = useState(false);
+  const [activePaymentConfirmation, setActivePaymentConfirmation] = useState<PaymentConfirmation | null>(null);
 
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -114,11 +129,19 @@ export const EventDetailsPage: React.FC = () => {
       setSettlements(sets);
     });
 
+    const unsubPaymentConfirmations = dataService.subscribePaymentConfirmations(
+      eventId,
+      (confs) => {
+        setPaymentConfirmations(confs);
+      }
+    );
+
     return () => {
       unsubEvent();
       unsubItems();
       unsubExpenses();
       unsubSettlements();
+      unsubPaymentConfirmations();
     };
   }, [eventId]);
 
@@ -182,7 +205,7 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  // Map expenses by itemId
+  // Map expenses by itemId (sorted chronologically descending)
   const expensesByItem = useMemo(() => {
     const map: Record<string, ExpenseEntry[]> = {};
     for (const item of items) {
@@ -193,6 +216,9 @@ export const EventDetailsPage: React.FC = () => {
         if (!map[exp.itemId]) map[exp.itemId] = [];
         map[exp.itemId].push(exp);
       }
+    }
+    for (const id of Object.keys(map)) {
+      map[id] = sortEntriesChronologicalDesc(map[id]);
     }
     return map;
   }, [items, expenses]);
@@ -462,10 +488,80 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  const handleRecordSettlement = async (data: any) => {
+  const handleOpenDebtorPaymentModal = (
+    creditorUid: string,
+    creditorName: string,
+    maxAmountMinor: number
+  ) => {
+    setActiveDebtorPayment({
+      creditorUid,
+      creditorName,
+      maxAmountMinor,
+    });
+    setIsPaymentDetailsModalOpen(true);
+  };
+
+  const handleOpenConfirmReceiptModal = (confirmation: PaymentConfirmation) => {
+    setActivePaymentConfirmation(confirmation);
+    setIsConfirmReceiptModalOpen(true);
+  };
+
+  const handleCreatePaymentConfirmation = async (data: {
+    debtorUid: string;
+    debtorName: string;
+    creditorUid: string;
+    creditorName: string;
+    amountMinor: number;
+    paymentMethod: string;
+    paymentReference: string;
+    paymentNote: string;
+    paidDate: string;
+    paidTime: string;
+    occurredAt: number;
+  }) => {
     if (!event || !user) return;
-    await dataService.recordSettlement({ ...data, eventId: event.id }, user);
-    showToast('Settlement recorded! 💸');
+    try {
+      await dataService.createPaymentConfirmation(
+        {
+          ...data,
+          eventId: event.id,
+          eventName: event.name,
+        },
+        user
+      );
+      showToast('Payment marked as paid! Awaiting creditor confirmation. ⏳');
+      setIsPaymentDetailsModalOpen(false);
+      setActiveDebtorPayment(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit payment details');
+    }
+  };
+
+  const handleConfirmPaymentReceipt = async (confirmation: PaymentConfirmation) => {
+    if (!event || !user) return;
+    try {
+      await dataService.confirmPaymentReceipt(confirmation, user, event.name);
+      showToast('Payment confirmed! Settlement recorded. 💸');
+      setIsConfirmReceiptModalOpen(false);
+      setActivePaymentConfirmation(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to confirm payment receipt');
+    }
+  };
+
+  const handleReportNotReceived = async (
+    confirmation: PaymentConfirmation,
+    reason?: string
+  ) => {
+    if (!event || !user) return;
+    try {
+      await dataService.rejectPaymentConfirmation(confirmation, user, event.name, reason);
+      showToast('Payment marked as not received. Debt restored.');
+      setIsConfirmReceiptModalOpen(false);
+      setActivePaymentConfirmation(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to reject payment confirmation');
+    }
   };
 
   const handleSendReminder = async (debtorUid: string, amountMinor: number) => {
@@ -483,7 +579,10 @@ export const EventDetailsPage: React.FC = () => {
 
   const currency = event?.currency || 'INR';
   const isHost = Boolean(event && user && event.hostUid === user.uid);
-  const activeItems = useMemo(() => items.filter((i) => !i.deleted), [items]);
+  const activeItems = useMemo(() => {
+    const nonDeleted = items.filter((i) => !i.deleted);
+    return sortItemsChronologicalDesc(nonDeleted, expenses);
+  }, [items, expenses]);
   const slotsCount = event?.slots ? Object.keys(event.slots).length : 0;
 
   const { debtsOwedToCurrentUser, userOwesMember } = useMemo(() => {
@@ -1228,12 +1327,9 @@ export const EventDetailsPage: React.FC = () => {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => {
-                          setActiveSuggestion(null);
-                          setIsSettlementModalOpen(true);
-                        }}
+                        onClick={() => setActiveTab('dashboard')}
                       >
-                        Record Settlement
+                        View Balances & Settle
                       </Button>
                     </div>
 
@@ -1243,7 +1339,7 @@ export const EventDetailsPage: React.FC = () => {
                           No settlements recorded yet.
                         </div>
                       ) : (
-                        settlements.map((s) => {
+                        sortEntriesChronologicalDesc(settlements).map((s) => {
                           const fromName = getFirstName(s.payerName || event.members[s.payerUid]?.displayName || s.payerUid);
                           const toName = getFirstName(s.receiverName || event.members[s.receiverUid]?.displayName || s.receiverUid);
                           return (
@@ -1412,15 +1508,15 @@ export const EventDetailsPage: React.FC = () => {
       {/* ==================================================== */}
       {activeTab === 'dashboard' && financialOverview && (
         <div className="space-y-6">
-          {/* Member Ledger Breakdown (Section 8.1 & 8.2) */}
+          {/* 1. Debt Simplification / Optimal Settlement Suggestions */}
           <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>👥</span> Individual Member Totals
+                  <span>🤝</span> Optimal Settlement Suggestions
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Individual spending, fair share allocation, and current net balances.
+                  Minimal transactions calculated automatically to settle all debts.
                 </p>
               </div>
 
@@ -1432,11 +1528,137 @@ export const EventDetailsPage: React.FC = () => {
               )}
             </div>
 
+            {financialOverview.settlementSuggestions.length === 0 ? (
+              <div className="text-center py-8 text-xs font-bold text-teal-600 dark:text-teal-400">
+                🎉 All event expenses are completely settled! No outstanding payments.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {financialOverview.settlementSuggestions.map((sug, idx) => {
+                  const fromMember = event.members[sug.fromUid];
+                  const fromName = getPersonDisplayName(sug.fromUid) || sug.fromName || 'Member';
+                  const toName = getPersonDisplayName(sug.toUid) || sug.toName || 'Member';
+                  const isUserInvolved = sug.fromUid === user.uid || sug.toUid === user.uid;
+
+                  // Check if there is an active pending confirmation between these two
+                  const pendingConf = paymentConfirmations.find(
+                    (pc) =>
+                      pc.debtorUid === sug.fromUid &&
+                      pc.creditorUid === sug.toUid &&
+                      pc.status === 'awaiting_confirmation'
+                  );
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isUserInvolved
+                          ? 'border-teal-500/40 bg-teal-50/20 dark:bg-teal-950/15'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={fromMember?.photoURL}
+                          name={fromName}
+                          size="sm"
+                        />
+                        <div className="text-xs">
+                          <span className="font-extrabold text-slate-800 dark:text-white">
+                            {fromName} {sug.fromUid === user.uid ? '(You)' : ''}
+                          </span>
+                          <span className="text-slate-400 mx-1.5">owes</span>
+                          <strong className="text-slate-800 dark:text-white font-extrabold">
+                            {toName} {sug.toUid === user.uid ? '(You)' : ''}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-3">
+                        <span className="text-base font-black text-slate-900 dark:text-white">
+                          {formatCurrency(sug.amountMinor, currency)}
+                        </span>
+
+                        {/* Debtor Action: Paid or Awaiting Confirmation */}
+                        {sug.fromUid === user.uid && (
+                          pendingConf ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                              <Clock className="w-3.5 h-3.5" />
+                              Awaiting Confirmation ({formatCurrency(pendingConf.amountMinor, currency)})
+                            </span>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() =>
+                                handleOpenDebtorPaymentModal(sug.toUid, toName, sug.amountMinor)
+                              }
+                              leftIcon={<CreditCard className="w-3.5 h-3.5" />}
+                            >
+                              Paid
+                            </Button>
+                          )
+                        )}
+
+                        {/* Creditor Action: Settle Now (Confirm Receipt) or Send Reminder */}
+                        {sug.toUid === user.uid && (
+                          pendingConf ? (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                              onClick={() => handleOpenConfirmReceiptModal(pendingConf)}
+                              leftIcon={<Check className="w-3.5 h-3.5" />}
+                            >
+                              Settle Now
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={Boolean(sendingReminders[sug.fromUid])}
+                              isLoading={Boolean(sendingReminders[sug.fromUid])}
+                              onClick={() => handleSendReminder(sug.fromUid, sug.amountMinor)}
+                              leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
+                            >
+                              Send Reminder
+                            </Button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Individual Member Totals */}
+          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>👥</span> Individual Member Totals
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Individual spending, fair share allocation, and current net balances.
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {Object.entries(financialOverview.memberSummaries).map(([uid, summary]) => {
                 const member = event.members[uid];
+                const displayName = getPersonDisplayName(uid) || summary.displayName;
                 const owesYou = debtsOwedToCurrentUser[uid] || 0;
                 const youOwe = userOwesMember[uid] || 0;
+
+                const debtorPending = paymentConfirmations.find(
+                  (pc) => pc.debtorUid === user.uid && pc.creditorUid === uid && pc.status === 'awaiting_confirmation'
+                );
+                const creditorPending = paymentConfirmations.find(
+                  (pc) => pc.debtorUid === uid && pc.creditorUid === user.uid && pc.status === 'awaiting_confirmation'
+                );
 
                 return (
                   <div
@@ -1447,13 +1669,12 @@ export const EventDetailsPage: React.FC = () => {
                       <div className="flex items-center gap-2.5">
                         <Avatar
                           src={member?.photoURL}
-                          name={getFirstName(member?.displayName || summary.displayName)}
+                          name={displayName}
                           size="sm"
                         />
                         <div>
                           <span className="text-xs font-bold text-slate-800 dark:text-white block">
-                            {getFirstName(member?.displayName || summary.displayName)}{' '}
-                            {uid === user.uid ? '(You)' : ''}
+                            {displayName} {uid === user.uid ? '(You)' : ''}
                           </span>
                           <span className="text-[10px] text-slate-400 capitalize">
                             {member?.role || 'Member'}
@@ -1493,55 +1714,214 @@ export const EventDetailsPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Debtor Reminder Button (Section 8.2) */}
+                    {/* Member owes current user */}
                     {owesYou > 0 && uid !== user.uid && (
                       <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
                           Owes you {formatCurrency(owesYou, currency)}
                         </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={Boolean(sendingReminders[uid])}
-                          isLoading={Boolean(sendingReminders[uid])}
-                          onClick={() => handleSendReminder(uid, owesYou)}
-                          leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
-                          className="text-xs py-1 px-2.5 rounded-xl border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/20 shadow-none"
-                        >
-                          Send Reminder
-                        </Button>
+                        {creditorPending ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1 px-2.5 rounded-xl"
+                            onClick={() => handleOpenConfirmReceiptModal(creditorPending)}
+                            leftIcon={<Check className="w-3.5 h-3.5" />}
+                          >
+                            Settle Now
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={Boolean(sendingReminders[uid])}
+                            isLoading={Boolean(sendingReminders[uid])}
+                            onClick={() => handleSendReminder(uid, owesYou)}
+                            leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
+                            className="text-xs py-1 px-2.5 rounded-xl border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/20 shadow-none"
+                          >
+                            Send Reminder
+                          </Button>
+                        )}
                       </div>
                     )}
 
-                    {/* Creditor Settle Action */}
+                    {/* Current user owes member */}
                     {youOwe > 0 && uid !== user.uid && (
                       <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
                           You owe {formatCurrency(youOwe, currency)}
                         </span>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            setActiveSuggestion({
-                              fromUid: user.uid,
-                              fromName: user.displayName,
-                              toUid: uid,
-                              toName: member?.displayName || summary.displayName,
-                              amountMinor: youOwe,
-                            });
-                            setIsSettlementModalOpen(true);
-                          }}
-                          className="text-xs py-1 px-2.5 rounded-xl"
-                        >
-                          Settle Now
-                        </Button>
+                        {debtorPending ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-lg">
+                            <Clock className="w-3 h-3" />
+                            Awaiting Confirmation ({formatCurrency(debtorPending.amountMinor, currency)})
+                          </span>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleOpenDebtorPaymentModal(uid, displayName, youOwe)}
+                            leftIcon={<CreditCard className="w-3.5 h-3.5" />}
+                            className="text-xs py-1 px-2.5 rounded-xl"
+                          >
+                            Paid
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
+          </div>
+
+          {/* 3. Pending Payment Confirmations */}
+          {paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation').length > 0 && (
+            <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-amber-200/80 dark:border-amber-900/40 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-amber-500" />
+                    Pending Payment Confirmations (
+                    {paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation').length}
+                    )
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Payments marked as Paid awaiting creditor verification and confirmation.
+                  </p>
+                </div>
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-full">
+                  Awaiting Receipt
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {sortEntriesChronologicalDesc(
+                  paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation')
+                ).map((pc) => {
+                  const fromName = getPersonDisplayName(pc.debtorUid) || pc.debtorName || 'Member';
+                  const toName = getPersonDisplayName(pc.creditorUid) || pc.creditorName || 'Member';
+                  const isCreditor = pc.creditorUid === user.uid;
+
+                  return (
+                    <div
+                      key={pc.id}
+                      className="p-4 rounded-2xl bg-amber-500/5 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold">
+                          ₹
+                        </span>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5 flex-wrap">
+                            <span>{fromName} {pc.debtorUid === user.uid ? '(You)' : ''}</span>
+                            <span className="text-slate-400">paid</span>
+                            <span>{toName} {pc.creditorUid === user.uid ? '(You)' : ''}</span>
+                            <span className="text-amber-600 dark:text-amber-400 font-extrabold ml-1">
+                              {formatCurrency(pc.amountMinor, currency)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1 flex-wrap">
+                            {pc.paymentMethod && <span className="capitalize">{pc.paymentMethod.replace('_', ' ')}</span>}
+                            {pc.paymentReference && <span>• Ref: {pc.paymentReference}</span>}
+                            {pc.paidDate && <span>• {pc.paidDate} {pc.paidTime || ''}</span>}
+                            {pc.paymentNote && <span className="italic">• "{pc.paymentNote}"</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 justify-end">
+                        {isCreditor ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handleOpenConfirmReceiptModal(pc)}
+                            leftIcon={<Check className="w-3.5 h-3.5" />}
+                          >
+                            Settle Now
+                          </Button>
+                        ) : (
+                          <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            Awaiting Creditor Confirmation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 4. Settlement History (Completed Settlements) */}
+          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                  Settlement History (
+                  {settlements.filter((s) => s.status === 'completed').length}
+                  )
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Immutable record of all confirmed and completed payment settlements.
+                </p>
+              </div>
+            </div>
+
+            {settlements.filter((s) => s.status === 'completed').length === 0 ? (
+              <div className="text-center py-6 text-xs text-slate-400">
+                No confirmed settlements yet.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {sortEntriesChronologicalDesc(
+                  settlements.filter((s) => s.status === 'completed')
+                ).map((s) => {
+                  const fromName = getPersonDisplayName(s.payerUid) || s.payerName || 'Member';
+                  const toName = getPersonDisplayName(s.receiverUid) || s.receiverName || 'Member';
+
+                  return (
+                    <div
+                      key={s.id}
+                      className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        <div>
+                          <div>
+                            <strong className="text-slate-800 dark:text-white font-bold">
+                              {fromName} {s.payerUid === user.uid ? '(You)' : ''}
+                            </strong>{' '}
+                            paid{' '}
+                            <strong className="text-slate-800 dark:text-white font-bold">
+                              {toName} {s.receiverUid === user.uid ? '(You)' : ''}
+                            </strong>
+                          </div>
+                          <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                            {s.paymentMethod && <span className="capitalize">{s.paymentMethod.replace('_', ' ')}</span>}
+                            {s.paymentReference && <span>• Ref: {s.paymentReference}</span>}
+                            {s.paidDate && <span>• {formatDisplayExpenseDate(s.paidDate)}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="font-extrabold text-sm text-slate-900 dark:text-white block">
+                          {formatCurrency(s.amountMinor, currency)}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          Confirmed ✓
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1720,15 +2100,39 @@ export const EventDetailsPage: React.FC = () => {
         onSaveCategoryWithSubitems={handleSaveCategoryWithSubitems}
       />
 
-      {/* Settlement Modal */}
-      <SettlementModal
-        isOpen={isSettlementModalOpen}
-        onClose={() => setIsSettlementModalOpen(false)}
-        suggestion={activeSuggestion}
-        currency={currency}
-        currentUser={user}
-        onConfirm={handleRecordSettlement}
-      />
+      {/* Debtor Payment Details Modal */}
+      {activeDebtorPayment && (
+        <PaymentDetailsModal
+          isOpen={isPaymentDetailsModalOpen}
+          onClose={() => {
+            setIsPaymentDetailsModalOpen(false);
+            setActiveDebtorPayment(null);
+          }}
+          debtorUser={user}
+          creditor={{
+            uid: activeDebtorPayment.creditorUid,
+            displayName: activeDebtorPayment.creditorName,
+          }}
+          maxAmountMinor={activeDebtorPayment.maxAmountMinor}
+          currency={currency}
+          onSubmit={handleCreatePaymentConfirmation}
+        />
+      )}
+
+      {/* Creditor Confirm Receipt Modal */}
+      {activePaymentConfirmation && (
+        <ConfirmPaymentReceiptModal
+          isOpen={isConfirmReceiptModalOpen}
+          onClose={() => {
+            setIsConfirmReceiptModalOpen(false);
+            setActivePaymentConfirmation(null);
+          }}
+          confirmation={activePaymentConfirmation}
+          currency={currency}
+          onConfirmReceipt={handleConfirmPaymentReceipt}
+          onReportNotReceived={handleReportNotReceived}
+        />
+      )}
 
       {/* Bulk Delete Modal */}
       <BulkDeleteModal

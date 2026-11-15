@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { useTheme } from '@/app/providers/ThemeContext';
 import { useNotifications } from '@/app/providers/NotificationContext';
@@ -10,7 +10,6 @@ import {
   Bell,
   LogOut,
   User,
-  PlusCircle,
   Home,
   Users,
 } from 'lucide-react';
@@ -20,7 +19,6 @@ export const Navbar: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { unreadCount } = useNotifications();
   const location = useLocation();
-  const navigate = useNavigate();
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -79,17 +77,6 @@ export const Navbar: React.FC = () => {
 
         {/* Right Action Icons */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Quick Create Event Button */}
-          {user && (
-            <button
-              onClick={() => navigate('/?action=create')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs shadow-sm transition-transform active:scale-95"
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>New Event</span>
-            </button>
-          )}
-
           {/* Theme Switcher */}
           <button
             onClick={toggleTheme}

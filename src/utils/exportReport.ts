@@ -2,6 +2,7 @@ import { SplitifyEvent, EventItem, ExpenseEntry, SettlementEntry } from '@/types
 import { formatCurrency } from './currency';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { getFirstName } from './name';
+import { sortItemsChronologicalDesc, sortEntriesChronologicalDesc } from './sorting';
 
 /**
  * Generates a clean, comprehensive plain-text expenses report.
@@ -79,7 +80,10 @@ export function generatePlainTextExpenseReport(
   lines.push('📋 EXPENSE BREAKDOWN:');
   lines.push('');
 
-  const activeItems = items.filter((i) => !i.deleted && !i.isSettlementsItem);
+  const activeItems = sortItemsChronologicalDesc(
+    items.filter((i) => !i.deleted && !i.isSettlementsItem),
+    expenses
+  );
 
   if (activeItems.length === 0) {
     lines.push('  (No expenses recorded yet)');
@@ -87,7 +91,9 @@ export function generatePlainTextExpenseReport(
     for (const item of activeItems) {
       if (item.isCategory) {
         // Category with subitems
-        const subitems = expenses.filter((e) => e.itemId === item.id && !e.deleted);
+        const subitems = sortEntriesChronologicalDesc(
+          expenses.filter((e) => e.itemId === item.id && !e.deleted)
+        );
         const catTotalMinor = subitems.reduce((s, e) => s + (e.costMinor || 0), 0);
 
         lines.push(`📁 [Category] ${item.emoji} ${item.name} — Total: ${formatCurrency(catTotalMinor, event.currency)}`);

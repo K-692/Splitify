@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
-import { Friendship, FriendRequest, UserProfile } from '@/types';
+import { Friendship, FriendRequest, UserProfile, EventInvitation } from '@/types';
 import { dataService } from '@/services/dataService';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
+import { FriendRequestActions } from '@/components/friends/FriendRequestActions';
 import { getFirstName } from '@/utils/name';
 import {
   Users,
@@ -14,16 +16,22 @@ import {
   AlertCircle,
   Clock,
   Trash2,
+  Calendar,
+  Mail,
+  Send,
 } from 'lucide-react';
 
 export const FriendsPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<'friends' | 'received' | 'sent'>('friends');
+  const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'invitations'>('friends');
+  const [requestSubTab, setRequestSubTab] = useState<'received' | 'sent'>('received');
   const [friendships, setFriendships] = useState<Friendship[]>([]);
   const [friendProfiles, setFriendProfiles] = useState<UserProfile[]>([]);
   const [receivedRequests, setReceivedRequests] = useState<FriendRequest[]>([]);
   const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
+  const [eventInvitations, setEventInvitations] = useState<EventInvitation[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Search user by username
@@ -45,6 +53,10 @@ export const FriendsPage: React.FC = () => {
         setSentRequests(sent);
       }
     );
+
+    const unsubInvites = dataService.subscribeEventInvitations(user.uid, (invites) => {
+      setEventInvitations(invites);
+    });
 
     let isCurrent = true;
     const unsubFriends = dataService.subscribeFriends(user.uid, async (list) => {
@@ -79,6 +91,7 @@ export const FriendsPage: React.FC = () => {
     return () => {
       isCurrent = false;
       unsubRequests();
+      unsubInvites();
       unsubFriends();
     };
   }, [user]);
@@ -122,20 +135,38 @@ export const FriendsPage: React.FC = () => {
     }
   };
 
-  const handleRespondRequest = async (requestId: string, accept: boolean) => {
-    if (!user) return;
-    try {
-      await dataService.respondToFriendRequest(requestId, accept, user);
-    } catch (err: any) {
-      alert(err.message || 'Error updating friend request');
-    }
-  };
-
   const handleCancelRequest = async (requestId: string) => {
     try {
       await dataService.cancelFriendRequest(requestId);
     } catch (err: any) {
       alert(err.message || 'Error cancelling request');
+    }
+  };
+
+  const handleRespondInvitation = async (invitation: EventInvitation, accept: boolean) => {
+    if (!user) return;
+    try {
+      await dataService.respondToEventInvitation(invitation, accept, user);
+      if (accept) {
+        navigate(`/events/${invitation.eventId}`);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error responding to event invitation');
+    }
+  };
+
+  const formatInvitationDate = (timestamp: number) => {
+    try {
+      return new Date(timestamp).toLocaleString('en-US', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return new Date(timestamp).toLocaleString();
     }
   };
 
@@ -160,7 +191,7 @@ export const FriendsPage: React.FC = () => {
           <span>🤝</span> Friends & Discovery
         </h1>
         <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">
-          Search for friends by their unique Splitify username and manage your friendships
+          Search for friends by their unique Splitify username and manage your friendships & event invitations
         </p>
       </div>
 
@@ -180,33 +211,38 @@ export const FriendsPage: React.FC = () => {
               type="text"
               placeholder="e.g. rahul, priya, ananya..."
               value={searchUsername}
-              onChange={(e) => setSearchUsername(e.target.value)}
-              className="w-full pl-8 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-              required
+              onChange={(e) => setSearchUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              className="w-full pl-8 pr-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/30 dark:text-white placeholder:text-slate-400"
             />
           </div>
-          <Button type="submit" variant="primary" size="md" isLoading={isSearching}>
+          <Button
+            type="submit"
+            variant="primary"
+            isLoading={isSearching}
+            disabled={!searchUsername.trim()}
+          >
             Search
           </Button>
         </form>
 
+        {/* Feedback Messages */}
         {actionError && (
-          <div className="mt-3 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
+          <div className="mt-3 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/50 flex items-center gap-2 text-xs font-bold text-rose-600 dark:text-rose-400">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{actionError}</span>
           </div>
         )}
 
         {successMessage && (
-          <div className="mt-3 p-3 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 text-teal-800 dark:text-teal-300 text-xs font-semibold flex items-center gap-2">
-            <Check className="w-4 h-4 text-teal-600 flex-shrink-0" />
+          <div className="mt-3 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+            <Check className="w-4 h-4 flex-shrink-0" />
             <span>{successMessage}</span>
           </div>
         )}
 
-        {/* Search Result */}
+        {/* Search Result Card */}
         {searchAttempted && !isSearching && (
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="mt-4">
             {searchResult ? (
               <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-3">
@@ -231,6 +267,10 @@ export const FriendsPage: React.FC = () => {
                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <UserCheck className="w-4 h-4" /> Already Friends
                   </span>
+                ) : receivedRequests.some((r) => r.fromUid === searchResult.uid) ? (
+                  <FriendRequestActions
+                    requestId={receivedRequests.find((r) => r.fromUid === searchResult.uid)!.id}
+                  />
                 ) : sentRequests.some((r) => r.toUid === searchResult.uid) ? (
                   <span className="text-xs font-bold text-slate-400 flex items-center gap-1">
                     <Clock className="w-4 h-4" /> Request Pending
@@ -257,10 +297,10 @@ export const FriendsPage: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('friends')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 ${
+          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeTab === 'friends'
               ? 'bg-[#203D62] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -273,14 +313,14 @@ export const FriendsPage: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('received')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 ${
-            activeTab === 'received'
+          onClick={() => setActiveTab('requests')}
+          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'requests'
               ? 'bg-[#203D62] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span>Received</span>
+          <span>Friend Requests</span>
           {receivedRequests.length > 0 && (
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-[#F36B2C] text-white font-black">
               {receivedRequests.length}
@@ -289,18 +329,23 @@ export const FriendsPage: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('sent')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 ${
-            activeTab === 'sent'
+          onClick={() => setActiveTab('invitations')}
+          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'invitations'
               ? 'bg-[#203D62] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span>Sent ({sentRequests.length})</span>
+          <span>Event Invitations</span>
+          {eventInvitations.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-teal-500 text-white font-black">
+              {eventInvitations.length}
+            </span>
+          )}
         </button>
       </div>
 
-      {/* TAB: MY FRIENDS */}
+      {/* TAB 1: MY FRIENDS */}
       {activeTab === 'friends' && (
         <div className="space-y-3">
           {loading ? (
@@ -323,11 +368,10 @@ export const FriendsPage: React.FC = () => {
                     (f.user1Uid === user.uid && f.user2Uid === friend.uid) ||
                     (f.user2Uid === user.uid && f.user1Uid === friend.uid)
                 );
-
                 return (
                   <div
                     key={friend.uid}
-                    className="p-4 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
+                    className="p-3.5 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3 hover:border-teal-500/20 transition-all"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <Avatar
@@ -367,104 +411,187 @@ export const FriendsPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB: RECEIVED REQUESTS */}
-      {activeTab === 'received' && (
-        <div className="space-y-3">
-          {receivedRequests.length === 0 ? (
-            <div className="text-center py-12 text-xs text-slate-400">
-              No pending friend requests received.
-            </div>
-          ) : (
-            receivedRequests.map((req) => (
-              <div
-                key={req.id}
-                className="p-4 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Avatar
-                    src={req.fromPhotoURL}
-                    name={req.fromDisplayName}
-                    size="md"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-900 dark:text-white truncate">
-                      {req.fromDisplayName}
-                    </p>
-                    <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 truncate">
-                      @{req.fromUsername}
-                    </p>
-                    <span className="text-[10px] text-slate-400">
-                      Sent {new Date(req.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
+      {/* TAB 2: FRIEND REQUESTS */}
+      {activeTab === 'requests' && (
+        <div className="space-y-4">
+          {/* Sub-Tabs: Received vs Sent */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setRequestSubTab('received')}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+                requestSubTab === 'received'
+                  ? 'bg-teal-500 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Received</span>
+              {receivedRequests.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-teal-600 font-black">
+                  {receivedRequests.length}
+                </span>
+              )}
+            </button>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => handleRespondRequest(req.id, true)}
-                    leftIcon={<Check className="w-3.5 h-3.5" />}
-                  >
-                    Accept
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleRespondRequest(req.id, false)}
-                    className="text-slate-400 hover:text-rose-500"
-                  >
-                    Decline
-                  </Button>
+            <button
+              onClick={() => setRequestSubTab('sent')}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+                requestSubTab === 'sent'
+                  ? 'bg-teal-500 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Sent ({sentRequests.length})</span>
+            </button>
+          </div>
+
+          {/* Sub-tab: Received Requests */}
+          {requestSubTab === 'received' && (
+            <div className="space-y-3">
+              {receivedRequests.length === 0 ? (
+                <div className="text-center py-12 text-xs text-slate-400 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                  No pending friend requests received.
                 </div>
-              </div>
-            ))
+              ) : (
+                receivedRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="p-4 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar
+                        src={req.fromPhotoURL}
+                        name={req.fromDisplayName}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900 dark:text-white truncate">
+                          {req.fromDisplayName}
+                        </p>
+                        <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 truncate">
+                          @{req.fromUsername}
+                        </p>
+                        <span className="text-[10px] text-slate-400">
+                          Sent {new Date(req.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <FriendRequestActions requestId={req.id} />
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Sub-tab: Sent Requests */}
+          {requestSubTab === 'sent' && (
+            <div className="space-y-3">
+              {sentRequests.length === 0 ? (
+                <div className="text-center py-12 text-xs text-slate-400 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                  No pending sent friend requests.
+                </div>
+              ) : (
+                sentRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="p-4 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar
+                        src={req.toPhotoURL}
+                        name={req.toDisplayName || 'User'}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900 dark:text-white truncate">
+                          {req.toDisplayName || 'User'}
+                        </p>
+                        <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 truncate">
+                          @{req.toUsername || 'user'}
+                        </p>
+                        <span className="text-[10px] text-slate-400">
+                          Sent {new Date(req.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleCancelRequest(req.id)}
+                      leftIcon={<X className="w-3.5 h-3.5" />}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
       )}
 
-      {/* TAB: SENT REQUESTS */}
-      {activeTab === 'sent' && (
+      {/* TAB 3: EVENT INVITATIONS */}
+      {activeTab === 'invitations' && (
         <div className="space-y-3">
-          {sentRequests.length === 0 ? (
-            <div className="text-center py-12 text-xs text-slate-400">
-              No pending sent friend requests.
+          {eventInvitations.length === 0 ? (
+            <div className="text-center py-16 px-4 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+              <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-white mt-2">
+                No event invitations
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                When friends invite you to join an event, their invitations will appear right here!
+              </p>
             </div>
           ) : (
-            sentRequests.map((req) => (
-              <div
-                key={req.id}
-                className="p-4 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Avatar
-                    src={req.toPhotoURL}
-                    name={req.toDisplayName || 'User'}
-                    size="md"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-900 dark:text-white truncate">
-                      {req.toDisplayName || 'User'}
-                    </p>
-                    <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 truncate">
-                      @{req.toUsername || 'user'}
-                    </p>
-                    <span className="text-[10px] text-slate-400">
-                      Sent {new Date(req.createdAt).toLocaleDateString()}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {eventInvitations.map((inv) => (
+                <div
+                  key={inv.id}
+                  className="p-5 rounded-3xl bg-white dark:bg-[#15263C] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-4 hover:border-teal-500/20 transition-all"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-3xl p-2 rounded-2xl bg-slate-100 dark:bg-slate-800/80">
+                      {inv.eventEmoji || '🏖️'}
                     </span>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-base font-black text-slate-900 dark:text-white truncate">
+                        {inv.eventName}
+                      </h4>
+                      <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mt-0.5">
+                        Invited by <strong className="text-teal-600 dark:text-teal-400">{getFirstName(inv.fromDisplayName)}</strong>
+                      </p>
+                      <p className="text-[11px] text-slate-400 font-medium mt-1">
+                        {formatInvitationDate(inv.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      className="flex-1"
+                      onClick={() => handleRespondInvitation(inv, true)}
+                      leftIcon={<Check className="w-3.5 h-3.5" />}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-slate-400 hover:text-rose-500"
+                      onClick={() => handleRespondInvitation(inv, false)}
+                    >
+                      Decline
+                    </Button>
                   </div>
                 </div>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleCancelRequest(req.id)}
-                  leftIcon={<X className="w-3.5 h-3.5" />}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       )}

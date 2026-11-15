@@ -145,6 +145,8 @@ export interface EventItem {
   // Direct expense properties (when isCategory is false/undefined)
   costMinor?: number; // Integer minor currency units (paise/cents: 100000 = 1000.00)
   expenseDate?: string; // Calendar date in "YYYY-MM-DD" format
+  expenseTime?: string; // Time in "HH:mm" format
+  occurredAt?: number; // UTC timestamp of expense occurrence
   paidBy?: string; // UID of payer
   splitBy?: SplitMode;
   participants?: string[]; // UIDs of participants
@@ -166,6 +168,8 @@ export interface ExpenseEntry {
   emoji: string;
   costMinor: number; // Stored in minor currency units (paise/cents: 100000 = 1000.00)
   expenseDate?: string; // Calendar date in "YYYY-MM-DD" format
+  expenseTime?: string; // Time in "HH:mm" format
+  occurredAt?: number; // UTC timestamp of expense occurrence
   paidBy: string; // UID of payer
   splitBy: SplitMode;
   participants: string[]; // UIDs of participants
@@ -183,19 +187,53 @@ export interface ExpenseEntry {
   auditLogs: ExpenseAuditLog[];
 }
 
+export type PaymentStatus = 'awaiting_confirmation' | 'completed' | 'rejected';
+
+export interface PaymentConfirmation {
+  id: string;
+  eventId: string;
+  debtorUid: string;
+  debtorName: string;
+  creditorUid: string;
+  creditorName: string;
+  amountMinor: number;
+  paymentMethod?: string;
+  paymentReference?: string;
+  paymentNote?: string;
+  paidDate: string; // "YYYY-MM-DD"
+  paidTime: string; // "HH:mm" or "10:30 PM"
+  occurredAt: number; // UTC timestamp of payment
+  status: PaymentStatus;
+  createdAt: number;
+  confirmedAt?: number;
+  confirmedByUid?: string;
+  rejectedAt?: number;
+  rejectedByUid?: string;
+  rejectionReason?: string;
+}
+
 export interface SettlementEntry {
   id: string;
   eventId: string;
-  itemId: string; // ID of the system-generated 💸 Settlements item
+  itemId?: string; // ID of the system-generated 💸 Settlements item if applicable
+  paymentConfirmationId?: string;
   payerUid: string;
   payerName: string;
   receiverUid: string;
   receiverName: string;
   amountMinor: number;
-  recordedBy: string;
-  recordedByName: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  paymentNote?: string;
+  paidDate?: string;
+  paidTime?: string;
+  occurredAt?: number;
+  recordedBy?: string;
+  recordedByName?: string;
   createdAt: number;
-  formattedTimestamp: string;
+  formattedTimestamp?: string;
+  confirmedAt?: number;
+  confirmedByUid?: string;
   status: 'completed' | 'reversed';
   note?: string;
 }
@@ -211,7 +249,11 @@ export type NotificationType =
   | 'expense_deleted'
   | 'event_name_modified'
   | 'settlement_recorded'
-  | 'payment_reminder';
+  | 'payment_reminder'
+  | 'payment_marked_paid'
+  | 'payment_confirmation_required'
+  | 'payment_confirmed'
+  | 'payment_rejected';
 
 export interface AppNotification {
   id: string;
@@ -223,6 +265,8 @@ export interface AppNotification {
   eventId?: string;
   eventName?: string;
   amountMinor?: number;
+  paymentConfirmationId?: string;
+  settlementId?: string;
   title: string;
   description: string;
   read: boolean;

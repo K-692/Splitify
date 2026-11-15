@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { useNotifications } from '@/app/providers/NotificationContext';
-import { EventInvitation } from '@/types';
+import { EventInvitation, FriendRequest } from '@/types';
 import { dataService } from '@/services/dataService';
 import { Button } from '@/components/common/Button';
+import { FriendRequestActions } from '@/components/friends/FriendRequestActions';
 import { formatTimeAgo } from '@/utils/date';
 import {
   Bell,
@@ -20,14 +21,21 @@ export const NotificationsPage: React.FC = () => {
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
   const [invitations, setInvitations] = useState<EventInvitation[]>([]);
+  const [receivedFriendRequests, setReceivedFriendRequests] = useState<FriendRequest[]>([]);
   const [filterUnread, setFilterUnread] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    const unsub = dataService.subscribeEventInvitations(user.uid, (list) => {
+    const unsubInvites = dataService.subscribeEventInvitations(user.uid, (list) => {
       setInvitations(list);
     });
-    return () => unsub();
+    const unsubRequests = dataService.subscribeFriendRequests(user.uid, (received) => {
+      setReceivedFriendRequests(received);
+    });
+    return () => {
+      unsubInvites();
+      unsubRequests();
+    };
   }, [user]);
 
   const handleRespondInvitation = async (invitation: EventInvitation, accept: boolean) => {
@@ -47,7 +55,13 @@ export const NotificationsPage: React.FC = () => {
       case 'payment_reminder':
         return <span className="text-xl">🔔</span>;
       case 'settlement_recorded':
+      case 'payment_confirmed':
         return <span className="text-xl">💸</span>;
+      case 'payment_confirmation_required':
+      case 'payment_marked_paid':
+        return <span className="text-xl">⏳</span>;
+      case 'payment_rejected':
+        return <span className="text-xl">❌</span>;
       case 'event_invitation_received':
       case 'event_invitation_accepted':
         return <span className="text-xl">🏖️</span>;
@@ -169,49 +183,89 @@ export const NotificationsPage: React.FC = () => {
             </p>
           </div>
         ) : (
-          filtered.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => {
-                if (!item.read) markAsRead(item.id);
-                if (item.eventId) navigate(`/events/${item.eventId}`);
-              }}
-              className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
-                !item.read
-                  ? 'bg-white dark:bg-[#15263C] border-teal-500/40 shadow-sm ring-1 ring-teal-500/20'
-                  : 'bg-white/70 dark:bg-[#15263C]/60 border-slate-100 dark:border-slate-800/80 hover:bg-white dark:hover:bg-[#15263C]'
-              }`}
-            >
-              <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                <div className="flex-shrink-0 mt-0.5">{getNotificationIcon(item.type)}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
-                      {item.title}
-                    </h4>
-                    {!item.read && (
-                      <span className="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0" />
-                    )}
+          filtered.map((item) => {
+            const matchingReq =
+              item.type === 'friend_request_received'
+                ? receivedFriendRequests.find(
+                    (r) => r.id === item.actionData?.requestId || r.fromUid === item.senderUid
+                  )
+                : null;
+
+            return (
+              <div
+                key={item.id}
+                onClick={() => {
+                  if (!item.read) markAsRead(item.id);
+                  if (item.eventId) {
+                    navigate(
+                      item.type === 'payment_confirmation_required'
+                        ? `/events/${item.eventId}?tab=balances`
+                        : `/events/${item.eventId}`
+                    );
+                  }
+                }}
+                className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                  !item.read
+                    ? 'bg-white dark:bg-[#15263C] border-teal-500/40 shadow-sm ring-1 ring-teal-500/20'
+                    : 'bg-white/70 dark:bg-[#15263C]/60 border-slate-100 dark:border-slate-800/80 hover:bg-white dark:hover:bg-[#15263C]'
+                }`}
+              >
+                <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                  <div className="flex-shrink-0 mt-0.5">{getNotificationIcon(item.type)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                        {item.title}
+                      </h4>
+                      {!item.read && (
+                        <span className="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 font-medium mt-0.5">
+                      {item.description}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-semibold mt-1 block">
+                      {formatTimeAgo(item.createdAt)}
+                    </span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium mt-0.5">
-                    {item.description}
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-semibold mt-1 block">
-                    {formatTimeAgo(item.createdAt)}
-                  </span>
+                </div>
+
+                {/* Actionable button areas */}
+                <div className="flex items-center gap-2 flex-shrink-0 self-center">
+                  {item.type === 'friend_request_received' && (
+                    matchingReq ? (
+                      <FriendRequestActions requestId={matchingReq.id} size="sm" />
+                    ) : (
+                      <span className="text-xs font-semibold text-slate-400">Handled</span>
+                    )
+                  )}
+
+                  {item.type === 'payment_confirmation_required' && item.eventId && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!item.read) markAsRead(item.id);
+                        navigate(`/events/${item.eventId}?tab=balances`);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs shadow-sm transition-transform active:scale-95"
+                    >
+                      Settle Now
+                    </button>
+                  )}
+
+                  {item.eventId && item.type !== 'payment_confirmation_required' && item.type !== 'friend_request_received' && (
+                    <button
+                      type="button"
+                      className="p-1 text-slate-400 hover:text-teal-500 flex-shrink-0"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  )}
                 </div>
               </div>
-
-              {item.eventId && (
-                <button
-                  type="button"
-                  className="p-1 text-slate-400 hover:text-teal-500 flex-shrink-0 self-center"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

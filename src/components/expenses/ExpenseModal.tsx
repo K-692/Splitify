@@ -11,7 +11,7 @@ import {
 import { Avatar } from '@/components/common/Avatar';
 import { getFirstName } from '@/utils/name';
 import { getTodayLocalDateString } from '@/utils/date';
-import { Check, AlertCircle, Calendar, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { Check, AlertCircle, Calendar, Clock, Plus, Trash2, ArrowRight } from 'lucide-react';
 
 export interface StagedSubitem {
   id: string;
@@ -24,6 +24,8 @@ export interface StagedSubitem {
   customShares?: Record<string, number>;
   comment?: string;
   expenseDate: string;
+  expenseTime?: string;
+  occurredAt?: number;
 }
 
 interface ExpenseModalProps {
@@ -44,6 +46,8 @@ interface ExpenseModalProps {
     customShares?: Record<string, number>;
     comment?: string;
     expenseDate?: string;
+    expenseTime?: string;
+    occurredAt?: number;
   }) => Promise<void>;
   onSaveCategoryWithSubitems?: (
     categoryName: string,
@@ -56,6 +60,8 @@ interface ExpenseModalProps {
       customShares?: Record<string, number>;
       comment?: string;
       expenseDate?: string;
+      expenseTime?: string;
+      occurredAt?: number;
     }>
   ) => Promise<void>;
 }
@@ -117,10 +123,18 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [categoryEmoji, setCategoryEmoji] = useState('📁');
   const [stagedSubitems, setStagedSubitems] = useState<StagedSubitem[]>([]);
 
+  const getCurrentTimeString = () => {
+    const d = new Date();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
   // Subitem / Standalone expense fields
   const [name, setName] = useState('');
   const [costInput, setCostInput] = useState('');
   const [expenseDate, setExpenseDate] = useState(getTodayLocalDateString());
+  const [expenseTime, setExpenseTime] = useState(getCurrentTimeString());
   const [paidBy, setPaidBy] = useState(currentUser.uid);
   const [splitBy, setSplitBy] = useState<SplitMode>('equal');
   const [participants, setParticipants] = useState<string[]>([]);
@@ -145,6 +159,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setEmoji(source.emoji);
       setCostInput(((source.costMinor || 0) / 100).toString());
       setExpenseDate(source.expenseDate || getTodayLocalDateString());
+      setExpenseTime(source.expenseTime || getCurrentTimeString());
       setPaidBy(source.paidBy || currentUser.uid);
       setSplitBy(source.splitBy || 'equal');
       setParticipants(source.participants && source.participants.length > 0
@@ -170,6 +185,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setEmoji('📌');
       setCostInput('');
       setExpenseDate(getTodayLocalDateString());
+      setExpenseTime(getCurrentTimeString());
       setPaidBy(currentUser.uid);
       setSplitBy('equal');
       const allIds = assignablePeople.map((p) => p.id);
@@ -265,6 +281,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       return false;
     }
 
+    const occurredAt = new Date(`${expenseDate}T${expenseTime}`).getTime() || Date.now();
     const newSub: StagedSubitem = {
       id: 'staged_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       name: name.trim(),
@@ -276,6 +293,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       customShares: splitBy === 'amount' ? customSharesMinor : undefined,
       comment: comment.trim(),
       expenseDate,
+      expenseTime,
+      occurredAt,
     };
 
     setStagedSubitems((prev) => [...prev, newSub]);
@@ -320,6 +339,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           setError('Custom shares sum must equal total subitem cost.');
           return;
         }
+        const occurredAt = new Date(`${expenseDate}T${expenseTime}`).getTime() || Date.now();
         finalSubs.push({
           id: 'staged_' + Date.now(),
           name: name.trim(),
@@ -331,6 +351,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           customShares: splitBy === 'amount' ? customSharesMinor : undefined,
           comment: comment.trim(),
           expenseDate,
+          expenseTime,
+          occurredAt,
         });
       }
 
@@ -384,6 +406,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       return;
     }
 
+    const occurredAt = new Date(`${expenseDate}T${expenseTime}`).getTime() || Date.now();
     setIsSubmitting(true);
     try {
       await onSave({
@@ -395,6 +418,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
         customShares: splitBy === 'amount' ? customSharesMinor : undefined,
         comment: comment.trim(),
         expenseDate,
+        expenseTime,
+        occurredAt,
       });
       onClose();
     } catch (err: any) {
@@ -589,18 +614,33 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-teal-500" />
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={expenseDate}
-                  onChange={(e) => setExpenseDate(e.target.value)}
-                  required
-                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                />
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-teal-500" />
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-teal-500" />
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={expenseTime}
+                    onChange={(e) => setExpenseTime(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 

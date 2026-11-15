@@ -369,7 +369,7 @@ service cloud.firestore {
                'eventId', 'name', 'emoji', 'createdAt', 'updatedAt',
                'isCategory', 'isSettlementsItem', 'deleted', 'deletedAt', 'deletedBy',
                'costMinor', 'paidBy', 'splitBy', 'participants', 'shares', 'comment',
-               'expenseDate',
+               'expenseDate', 'expenseTime', 'occurredAt',
                'createdBy', 'createdByName', 'lastModifiedBy', 'lastModifiedByName',
                'lastModifiedAt', 'auditLogs'
              ]) &&
@@ -391,6 +391,8 @@ service cloud.firestore {
              (!('shares' in data) || (data.shares is map && data.shares.size() <= 100)) &&
              (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
              (!('expenseDate' in data) || (data.expenseDate is string && data.expenseDate.size() <= 20)) &&
+             (!('expenseTime' in data) || (data.expenseTime is string && data.expenseTime.size() <= 20)) &&
+             (!('occurredAt' in data) || data.occurredAt is number) &&
              (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 128)) &&
              (!('createdByName' in data) || (data.createdByName is string && data.createdByName.size() <= 100)) &&
              (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 128)) &&
@@ -410,7 +412,7 @@ service cloud.firestore {
                'id',
                'eventId', 'itemId', 'name', 'emoji', 'costMinor',
                'paidBy', 'splitBy', 'participants', 'shares', 'comment',
-               'expenseDate',
+               'expenseDate', 'expenseTime', 'occurredAt',
                'createdBy', 'createdByName', 'createdAt',
                'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt', 'updatedAt',
                'deleted', 'deletedAt', 'deletedBy', 'auditLogs'
@@ -435,6 +437,8 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt is number) &&
              (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
              (!('expenseDate' in data) || (data.expenseDate is string && data.expenseDate.size() <= 20)) &&
+             (!('expenseTime' in data) || (data.expenseTime is string && data.expenseTime.size() <= 20)) &&
+             (!('occurredAt' in data) || data.occurredAt is number) &&
              (!('deleted' in data) || data.deleted is bool) &&
              (!('deletedAt' in data) || data.deletedAt is number) &&
              (!('deletedBy' in data) || (data.deletedBy is string && data.deletedBy.size() <= 128));
@@ -442,31 +446,76 @@ service cloud.firestore {
 
     function isValidSettlement(data, eventId) {
       return data.keys().hasAll([
-               'eventId', 'itemId', 'payerUid', 'payerName',
+               'eventId', 'payerUid', 'payerName',
                'receiverUid', 'receiverName', 'amountMinor',
-               'recordedBy', 'recordedByName', 'createdAt',
-               'formattedTimestamp', 'status'
+               'createdAt', 'status'
              ]) &&
              data.keys().hasOnly([
-               'eventId', 'itemId', 'payerUid', 'payerName',
+               'id', 'eventId', 'itemId', 'payerUid', 'payerName',
                'receiverUid', 'receiverName', 'amountMinor',
                'recordedBy', 'recordedByName', 'createdAt',
-               'formattedTimestamp', 'status', 'note'
+               'formattedTimestamp', 'status', 'note',
+               'paymentConfirmationId', 'paymentMethod', 'paymentReference', 'paymentNote',
+               'paidDate', 'paidTime', 'occurredAt', 'confirmedAt', 'confirmedByUid'
              ]) &&
              data.eventId == eventId &&
-             data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128 &&
              data.payerUid is string && data.payerUid.size() >= 1 && data.payerUid.size() <= 128 &&
              data.payerName is string && data.payerName.size() >= 1 && data.payerName.size() <= 100 &&
              data.receiverUid is string && data.receiverUid.size() >= 1 && data.receiverUid.size() <= 128 &&
              data.receiverName is string && data.receiverName.size() >= 1 && data.receiverName.size() <= 100 &&
              data.payerUid != data.receiverUid &&
              data.amountMinor is number && data.amountMinor > 0 &&
-             data.recordedBy is string && data.recordedBy.size() >= 1 && data.recordedBy.size() <= 128 &&
-             data.recordedByName is string && data.recordedByName.size() >= 1 && data.recordedByName.size() <= 100 &&
              data.createdAt is number &&
-             data.formattedTimestamp is string && data.formattedTimestamp.size() <= 50 &&
              data.status in ['completed', 'reversed'] &&
-             (!('note' in data) || (data.note is string && data.note.size() <= 500));
+             (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             (!('itemId' in data) || (data.itemId is string && data.itemId.size() <= 128)) &&
+             (!('recordedBy' in data) || (data.recordedBy is string && data.recordedBy.size() <= 128)) &&
+             (!('recordedByName' in data) || (data.recordedByName is string && data.recordedByName.size() <= 100)) &&
+             (!('formattedTimestamp' in data) || (data.formattedTimestamp is string && data.formattedTimestamp.size() <= 50)) &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('paymentConfirmationId' in data) || (data.paymentConfirmationId is string && data.paymentConfirmationId.size() <= 128)) &&
+             (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 100)) &&
+             (!('paymentReference' in data) || (data.paymentReference is string && data.paymentReference.size() <= 200)) &&
+             (!('paymentNote' in data) || (data.paymentNote is string && data.paymentNote.size() <= 500)) &&
+             (!('paidDate' in data) || (data.paidDate is string && data.paidDate.size() <= 50)) &&
+             (!('paidTime' in data) || (data.paidTime is string && data.paidTime.size() <= 50)) &&
+             (!('occurredAt' in data) || data.occurredAt is number) &&
+             (!('confirmedAt' in data) || data.confirmedAt is number) &&
+             (!('confirmedByUid' in data) || (data.confirmedByUid is string && data.confirmedByUid.size() <= 128));
+    }
+
+    function isValidPaymentConfirmation(data, eventId) {
+      return data.keys().hasAll([
+               'eventId', 'debtorUid', 'debtorName', 'creditorUid', 'creditorName',
+               'amountMinor', 'paidDate', 'paidTime', 'occurredAt', 'status', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'id', 'eventId', 'debtorUid', 'debtorName', 'creditorUid', 'creditorName',
+               'amountMinor', 'paymentMethod', 'paymentReference', 'paymentNote',
+               'paidDate', 'paidTime', 'occurredAt', 'status', 'createdAt',
+               'confirmedAt', 'confirmedByUid', 'rejectedAt', 'rejectedByUid', 'rejectionReason'
+             ]) &&
+             data.eventId == eventId &&
+             data.debtorUid is string && data.debtorUid.size() >= 1 && data.debtorUid.size() <= 128 &&
+             data.debtorName is string && data.debtorName.size() >= 1 && data.debtorName.size() <= 100 &&
+             data.creditorUid is string && data.creditorUid.size() >= 1 && data.creditorUid.size() <= 128 &&
+             data.creditorName is string && data.creditorName.size() >= 1 && data.creditorName.size() <= 100 &&
+             data.debtorUid != data.creditorUid &&
+             data.amountMinor is number && data.amountMinor > 0 &&
+             data.paidDate is string && data.paidDate.size() <= 50 &&
+             data.paidTime is string && data.paidTime.size() <= 50 &&
+             data.occurredAt is number &&
+             data.status in ['awaiting_confirmation', 'completed', 'rejected'] &&
+             data.createdAt is number &&
+             (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 100)) &&
+             (!('paymentReference' in data) || (data.paymentReference is string && data.paymentReference.size() <= 200)) &&
+             (!('paymentNote' in data) || (data.paymentNote is string && data.paymentNote.size() <= 500)) &&
+             (!('confirmedAt' in data) || data.confirmedAt is number) &&
+             (!('confirmedByUid' in data) || (data.confirmedByUid is string && data.confirmedByUid.size() <= 128)) &&
+             (!('rejectedAt' in data) || data.rejectedAt is number) &&
+             (!('rejectedByUid' in data) || (data.rejectedByUid is string && data.rejectedByUid.size() <= 128)) &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500));
     }
 
     function isValidNotification(data, userId) {
@@ -477,6 +526,7 @@ service cloud.firestore {
              data.keys().hasOnly([
                'recipientUid', 'type', 'senderUid', 'senderName',
                'senderPhotoURL', 'eventId', 'eventName', 'amountMinor',
+               'paymentConfirmationId', 'settlementId',
                'title', 'description', 'read', 'createdAt', 'actionData'
              ]) &&
              data.recipientUid == userId &&
@@ -491,7 +541,11 @@ service cloud.firestore {
                'expense_deleted',
                'event_name_modified',
                'settlement_recorded',
-               'payment_reminder'
+               'payment_reminder',
+               'payment_marked_paid',
+               'payment_confirmation_required',
+               'payment_confirmed',
+               'payment_rejected'
              ] &&
              data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
              data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
@@ -503,6 +557,8 @@ service cloud.firestore {
              (!('eventId' in data) || (data.eventId is string && data.eventId.size() <= 128)) &&
              (!('eventName' in data) || (data.eventName is string && data.eventName.size() <= 100)) &&
              (!('amountMinor' in data) || data.amountMinor is number) &&
+             (!('paymentConfirmationId' in data) || (data.paymentConfirmationId is string && data.paymentConfirmationId.size() <= 128)) &&
+             (!('settlementId' in data) || (data.settlementId is string && data.settlementId.size() <= 128)) &&
              (!('actionData' in data) || (data.actionData is map && data.actionData.size() <= 20));
     }
 
@@ -752,19 +808,45 @@ service cloud.firestore {
         allow delete: if isEventMember(eventId);
       }
 
+      // Subcollection: paymentConfirmations (Two-Step Settlement Confirmation)
+      match /paymentConfirmations/{confirmationId} {
+        allow read: if isEventMember(eventId);
+
+        // Only debtor can create a payment confirmation when marking a debt paid
+        allow create: if isEventMember(eventId) &&
+                         request.auth.uid == request.resource.data.debtorUid &&
+                         request.resource.data.debtorUid != request.resource.data.creditorUid &&
+                         request.resource.data.status == 'awaiting_confirmation' &&
+                         isValidPaymentConfirmation(request.resource.data, eventId);
+
+        // Only creditor can update status (confirm receipt or mark not received)
+        allow update: if isEventMember(eventId) &&
+                         request.auth.uid == resource.data.creditorUid &&
+                         resource.data.status == 'awaiting_confirmation' &&
+                         request.resource.data.status in ['completed', 'rejected'] &&
+                         areImmutableFieldsUnchanged(['eventId', 'debtorUid', 'creditorUid', 'amountMinor', 'createdAt']) &&
+                         isValidPaymentConfirmation(request.resource.data, eventId);
+
+        allow delete: if false; // immutable confirmation audit record
+      }
+
       // Subcollection: settlements
       match /settlements/{settlementId} {
         allow read: if isEventMember(eventId);
 
+        // Receiver/creditor creates confirmed settlement record, or recordedBy member
         allow create: if isEventMember(eventId) &&
-                         request.auth.uid == request.resource.data.recordedBy &&
+                         (
+                           request.auth.uid == request.resource.data.receiverUid ||
+                           ('recordedBy' in request.resource.data && request.auth.uid == request.resource.data.recordedBy)
+                         ) &&
                          isValidSettlement(request.resource.data, eventId);
 
         allow update: if isEventMember(eventId) &&
-                         areImmutableFieldsUnchanged(['eventId', 'recordedBy', 'createdAt']) &&
+                         areImmutableFieldsUnchanged(['eventId', 'payerUid', 'receiverUid', 'amountMinor', 'createdAt']) &&
                          isValidSettlement(request.resource.data, eventId);
 
-        allow delete: if isEventMember(eventId);
+        allow delete: if false; // immutable settlement record
       }
     }
   }

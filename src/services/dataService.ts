@@ -19,6 +19,7 @@ import {
   EventItem,
   ExpenseEntry,
   SettlementEntry,
+  PaymentConfirmation,
   FriendRequest,
   Friendship,
   EventInvitation,
@@ -418,6 +419,8 @@ export const dataService = {
       customShares?: Record<string, number>;
       comment?: string;
       expenseDate?: string;
+      expenseTime?: string;
+      occurredAt?: number;
     },
     user: UserProfile,
     eventMembers: Record<string, any> = {}
@@ -433,6 +436,9 @@ export const dataService = {
     const formattedTimestamp = formatAuditTimestamp(now);
     const authorFirstName = getFirstName(user.displayName);
     const expenseDate = params.expenseDate || getTodayLocalDateString();
+    const expenseTime = params.expenseTime || '12:00';
+    const parsedOccurred = new Date(`${expenseDate}T${expenseTime}`).getTime();
+    const occurredAt = params.occurredAt || (!isNaN(parsedOccurred) ? parsedOccurred : now);
 
     const initialAuditLog = {
       id: 'log_' + now,
@@ -456,6 +462,8 @@ export const dataService = {
       participants,
       shares,
       expenseDate,
+      expenseTime,
+      occurredAt,
       comment: comment || '',
       createdBy: user.uid,
       createdByName: authorFirstName,
@@ -632,6 +640,8 @@ export const dataService = {
       customShares?: Record<string, number>;
       comment?: string;
       expenseDate?: string;
+      expenseTime?: string;
+      occurredAt?: number;
     }>,
     user: UserProfile,
     eventMembers: Record<string, any>
@@ -648,6 +658,15 @@ export const dataService = {
       const participants = updates.participants !== undefined ? updates.participants : (current.participants || []);
       const comment = updates.comment !== undefined ? updates.comment : (current.comment || '');
       const expenseDate = updates.expenseDate !== undefined ? updates.expenseDate : current.expenseDate;
+      const expenseTime = updates.expenseTime !== undefined ? updates.expenseTime : current.expenseTime;
+
+      let occurredAt = updates.occurredAt !== undefined ? updates.occurredAt : current.occurredAt;
+      if (updates.expenseDate !== undefined || updates.expenseTime !== undefined) {
+        const d = expenseDate || getTodayLocalDateString();
+        const t = expenseTime || '12:00';
+        const parsed = new Date(`${d}T${t}`).getTime();
+        if (!isNaN(parsed)) occurredAt = parsed;
+      }
 
       const shares =
         splitBy === 'equal'
@@ -712,6 +731,8 @@ export const dataService = {
         participants,
         shares,
         expenseDate,
+        expenseTime,
+        occurredAt,
         comment,
         lastModifiedBy: user.uid,
         lastModifiedByName: authorFirstName,
@@ -975,6 +996,8 @@ export const dataService = {
       customShares?: Record<string, number>;
       comment?: string;
       expenseDate?: string;
+      expenseTime?: string;
+      occurredAt?: number;
     },
     user: UserProfile,
     eventMembers: Record<string, any> = {}
@@ -990,6 +1013,9 @@ export const dataService = {
     const formattedTimestamp = formatAuditTimestamp(now);
     const authorFirstName = getFirstName(user.displayName);
     const expenseDate = params.expenseDate || getTodayLocalDateString();
+    const expenseTime = params.expenseTime || '12:00';
+    const parsedOccurred = new Date(`${expenseDate}T${expenseTime}`).getTime();
+    const occurredAt = params.occurredAt || (!isNaN(parsedOccurred) ? parsedOccurred : now);
 
     const initialAuditLog = {
       id: 'log_' + now,
@@ -1012,6 +1038,8 @@ export const dataService = {
       participants,
       shares,
       expenseDate,
+      expenseTime,
+      occurredAt,
       comment: comment || '',
       createdBy: user.uid,
       createdByName: authorFirstName,
@@ -1068,6 +1096,8 @@ export const dataService = {
       customShares?: Record<string, number>;
       comment?: string;
       expenseDate?: string;
+      expenseTime?: string;
+      occurredAt?: number;
     },
     user: UserProfile,
     eventMembers: Record<string, any>
@@ -1084,6 +1114,15 @@ export const dataService = {
       const participants = updates.participants !== undefined ? updates.participants : current.participants;
       const comment = updates.comment !== undefined ? updates.comment : current.comment;
       const expenseDate = updates.expenseDate !== undefined ? updates.expenseDate : current.expenseDate;
+      const expenseTime = updates.expenseTime !== undefined ? updates.expenseTime : current.expenseTime;
+
+      let occurredAt = updates.occurredAt !== undefined ? updates.occurredAt : current.occurredAt;
+      if (updates.expenseDate !== undefined || updates.expenseTime !== undefined) {
+        const d = expenseDate || getTodayLocalDateString();
+        const t = expenseTime || '12:00';
+        const parsed = new Date(`${d}T${t}`).getTime();
+        if (!isNaN(parsed)) occurredAt = parsed;
+      }
 
       const shares = splitBy === 'equal'
         ? calculateEqualShares(costMinor, participants)
@@ -1147,6 +1186,8 @@ export const dataService = {
         participants,
         shares,
         expenseDate,
+        expenseTime,
+        occurredAt,
         comment,
         lastModifiedBy: user.uid,
         lastModifiedByName: authorFirstName,
@@ -1345,6 +1386,325 @@ export const dataService = {
         callback([]);
       }
     );
+  },
+
+  // ==========================================
+  // PAYMENT CONFIRMATIONS & TWO-STEP SETTLEMENTS
+  // ==========================================
+  subscribePaymentConfirmations(
+    eventId: string,
+    callback: (confirmations: PaymentConfirmation[]) => void
+  ): () => void {
+    if (!isFirebaseConfigured() || !db) {
+      const load = () => {
+        const all = getLocal<PaymentConfirmation[]>(`payment_confirmations_${eventId}`, []);
+        callback(all);
+      };
+      load();
+      const handler = () => load();
+      window.addEventListener('splitify_data_changed', handler);
+      return () => window.removeEventListener('splitify_data_changed', handler);
+    }
+
+    const q = query(
+      collection(db, 'events', eventId, 'paymentConfirmations'),
+      orderBy('createdAt', 'desc')
+    );
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const confirmations: PaymentConfirmation[] = [];
+        snapshot.forEach((d) => {
+          confirmations.push({ ...d.data(), id: d.id } as PaymentConfirmation);
+        });
+        callback(confirmations);
+      },
+      (error) => {
+        console.error(`subscribePaymentConfirmations error for ${eventId}:`, error);
+        callback([]);
+      }
+    );
+  },
+
+  async createPaymentConfirmation(
+    params: {
+      eventId: string;
+      eventName: string;
+      debtorUid: string;
+      debtorName: string;
+      creditorUid: string;
+      creditorName: string;
+      amountMinor: number;
+      paymentMethod?: string;
+      paymentReference?: string;
+      paymentNote?: string;
+      paidDate: string;
+      paidTime: string;
+      occurredAt?: number;
+    },
+    user: UserProfile
+  ): Promise<string> {
+    const {
+      eventId,
+      eventName,
+      debtorUid,
+      debtorName,
+      creditorUid,
+      creditorName,
+      amountMinor,
+      paymentMethod,
+      paymentReference,
+      paymentNote,
+      paidDate,
+      paidTime,
+    } = params;
+
+    if (user.uid !== debtorUid) {
+      throw new Error('Only the debtor can mark a payment as paid.');
+    }
+    if (amountMinor <= 0) {
+      throw new Error('Payment amount must be greater than zero.');
+    }
+
+    const now = Date.now();
+    const parsedTime = new Date(`${paidDate}T${paidTime}`).getTime();
+    const occurredAt = params.occurredAt || (!isNaN(parsedTime) ? parsedTime : now);
+
+    const newConfirmation: Omit<PaymentConfirmation, 'id'> = {
+      eventId,
+      debtorUid,
+      debtorName,
+      creditorUid,
+      creditorName,
+      amountMinor,
+      paymentMethod: paymentMethod || 'UPI',
+      paymentReference: paymentReference || '',
+      paymentNote: paymentNote || '',
+      paidDate,
+      paidTime,
+      occurredAt,
+      status: 'awaiting_confirmation',
+      createdAt: now,
+    };
+
+    let confirmationId: string;
+
+    if (!isFirebaseConfigured() || !db) {
+      confirmationId = 'pc_' + now;
+      const list = getLocal<PaymentConfirmation[]>(`payment_confirmations_${eventId}`, []);
+      list.unshift({ ...newConfirmation, id: confirmationId });
+      setLocal(`payment_confirmations_${eventId}`, list);
+    } else {
+      const ref = await addDoc(
+        collection(db, 'events', eventId, 'paymentConfirmations'),
+        sanitizeForFirestore(newConfirmation)
+      );
+      confirmationId = ref.id;
+    }
+
+    // Send notification to creditor
+    const formattedAmount = (amountMinor / 100).toFixed(0);
+    await dataService.createNotification({
+      recipientUid: creditorUid,
+      type: 'payment_confirmation_required',
+      senderUid: user.uid,
+      senderName: debtorName,
+      senderPhotoURL: user.photoURL,
+      eventId,
+      eventName,
+      amountMinor,
+      paymentConfirmationId: confirmationId,
+      title: `${debtorName} marked ₹${formattedAmount} as paid`,
+      description: `${debtorName} marked ₹${formattedAmount} as paid in ${eventName}. Please confirm whether you received it.`,
+      actionData: {
+        eventId,
+        paymentConfirmationId: confirmationId,
+        amountMinor,
+        paymentMethod: paymentMethod || 'UPI',
+      },
+    });
+
+    // Also send confirmation notification to debtor
+    await dataService.createNotification({
+      recipientUid: debtorUid,
+      type: 'payment_marked_paid',
+      senderUid: user.uid,
+      senderName: debtorName,
+      senderPhotoURL: user.photoURL,
+      eventId,
+      eventName,
+      amountMinor,
+      paymentConfirmationId: confirmationId,
+      title: 'Payment Awaiting Confirmation',
+      description: `You marked ₹${formattedAmount} as paid to ${creditorName} in ${eventName}. Awaiting receiver confirmation.`,
+      actionData: {
+        eventId,
+        paymentConfirmationId: confirmationId,
+        amountMinor,
+      },
+    });
+
+    return confirmationId;
+  },
+
+  async confirmPaymentReceipt(
+    confirmation: PaymentConfirmation,
+    creditorUser: UserProfile,
+    eventName: string
+  ): Promise<string> {
+    if (creditorUser.uid !== confirmation.creditorUid) {
+      throw new Error('Only the intended receiver can confirm receipt of this payment.');
+    }
+    if (confirmation.status !== 'awaiting_confirmation') {
+      throw new Error('This payment is no longer awaiting confirmation.');
+    }
+
+    const { eventId } = confirmation;
+    const now = Date.now();
+    const formattedTimestamp = formatAuditTimestamp(now);
+
+    // 1. Ensure system-generated 💸 Settlements item exists
+    const settlementsItemId = await dataService.getOrCreateSettlementsItem(eventId);
+
+    const completedSettlement: Omit<SettlementEntry, 'id'> = {
+      eventId,
+      itemId: settlementsItemId,
+      paymentConfirmationId: confirmation.id,
+      payerUid: confirmation.debtorUid,
+      payerName: confirmation.debtorName,
+      receiverUid: confirmation.creditorUid,
+      receiverName: confirmation.creditorName,
+      amountMinor: confirmation.amountMinor,
+      paymentMethod: confirmation.paymentMethod || 'UPI',
+      paymentReference: confirmation.paymentReference || '',
+      paymentNote: confirmation.paymentNote || '',
+      paidDate: confirmation.paidDate,
+      paidTime: confirmation.paidTime,
+      occurredAt: confirmation.occurredAt || now,
+      recordedBy: creditorUser.uid,
+      recordedByName: creditorUser.displayName,
+      createdAt: now,
+      formattedTimestamp,
+      confirmedAt: now,
+      confirmedByUid: creditorUser.uid,
+      status: 'completed',
+      note: confirmation.paymentNote || '',
+    };
+
+    let settlementId: string;
+
+    if (!isFirebaseConfigured() || !db) {
+      settlementId = 'set_' + now;
+      // Update confirmation
+      const list = getLocal<PaymentConfirmation[]>(`payment_confirmations_${eventId}`, []);
+      const pc = list.find((c) => c.id === confirmation.id);
+      if (pc) {
+        pc.status = 'completed';
+        pc.confirmedAt = now;
+        pc.confirmedByUid = creditorUser.uid;
+        setLocal(`payment_confirmations_${eventId}`, list);
+      }
+      // Add settlement
+      const settlements = getLocal<SettlementEntry[]>(`settlements_${eventId}`, []);
+      settlements.unshift({ ...completedSettlement, id: settlementId });
+      setLocal(`settlements_${eventId}`, settlements);
+    } else {
+      const confirmationRef = doc(db, 'events', eventId, 'paymentConfirmations', confirmation.id);
+      const settlementCol = collection(db, 'events', eventId, 'settlements');
+      const newSettlementRef = doc(settlementCol);
+      settlementId = newSettlementRef.id;
+
+      await runTransaction(db, async (txn) => {
+        const snap = await txn.get(confirmationRef);
+        if (!snap.exists()) {
+          throw new Error('Payment confirmation document not found.');
+        }
+        const data = snap.data() as PaymentConfirmation;
+        if (data.status !== 'awaiting_confirmation') {
+          throw new Error('Payment confirmation has already been processed.');
+        }
+
+        txn.update(confirmationRef, {
+          status: 'completed',
+          confirmedAt: now,
+          confirmedByUid: creditorUser.uid,
+        });
+
+        txn.set(newSettlementRef, sanitizeForFirestore({ ...completedSettlement, id: settlementId }));
+      });
+    }
+
+    // Notify debtor of confirmation
+    const formattedAmount = (confirmation.amountMinor / 100).toFixed(0);
+    await dataService.createNotification({
+      recipientUid: confirmation.debtorUid,
+      type: 'payment_confirmed',
+      senderUid: creditorUser.uid,
+      senderName: creditorUser.displayName,
+      senderPhotoURL: creditorUser.photoURL,
+      eventId,
+      eventName,
+      amountMinor: confirmation.amountMinor,
+      paymentConfirmationId: confirmation.id,
+      settlementId,
+      title: 'Payment Confirmed!',
+      description: `Your payment of ₹${formattedAmount} was confirmed by ${creditorUser.displayName} in ${eventName}.`,
+    });
+
+    return settlementId;
+  },
+
+  async rejectPaymentConfirmation(
+    confirmation: PaymentConfirmation,
+    creditorUser: UserProfile,
+    eventName: string,
+    rejectionReason?: string
+  ): Promise<void> {
+    if (creditorUser.uid !== confirmation.creditorUid) {
+      throw new Error('Only the intended receiver can report payment as not received.');
+    }
+    if (confirmation.status !== 'awaiting_confirmation') {
+      throw new Error('This payment is no longer awaiting confirmation.');
+    }
+
+    const { eventId } = confirmation;
+    const now = Date.now();
+
+    if (!isFirebaseConfigured() || !db) {
+      const list = getLocal<PaymentConfirmation[]>(`payment_confirmations_${eventId}`, []);
+      const pc = list.find((c) => c.id === confirmation.id);
+      if (pc) {
+        pc.status = 'rejected';
+        pc.rejectedAt = now;
+        pc.rejectedByUid = creditorUser.uid;
+        pc.rejectionReason = rejectionReason || 'Payment not received';
+        setLocal(`payment_confirmations_${eventId}`, list);
+      }
+    } else {
+      const confirmationRef = doc(db, 'events', eventId, 'paymentConfirmations', confirmation.id);
+      await updateDoc(confirmationRef, {
+        status: 'rejected',
+        rejectedAt: now,
+        rejectedByUid: creditorUser.uid,
+        rejectionReason: rejectionReason || 'Payment not received',
+      });
+    }
+
+    // Notify debtor of rejection
+    const formattedAmount = (confirmation.amountMinor / 100).toFixed(0);
+    await dataService.createNotification({
+      recipientUid: confirmation.debtorUid,
+      type: 'payment_rejected',
+      senderUid: creditorUser.uid,
+      senderName: creditorUser.displayName,
+      senderPhotoURL: creditorUser.photoURL,
+      eventId,
+      eventName,
+      amountMinor: confirmation.amountMinor,
+      paymentConfirmationId: confirmation.id,
+      title: 'Payment Marked Not Received',
+      description: `Your payment confirmation for ₹${formattedAmount} in ${eventName} was marked as not received by ${creditorUser.displayName}. Please check with them.`,
+    });
   },
 
   async recordSettlement(
@@ -1668,6 +2028,7 @@ export const dataService = {
       updatedAt: Date.now(),
     };
 
+    let reqId: string;
     if (!isFirebaseConfigured() || !db) {
       const all = getLocal<FriendRequest[]>('friend_requests', []);
       const existing = all.find(
@@ -1677,10 +2038,12 @@ export const dataService = {
           r.status === 'pending'
       );
       if (existing) throw new Error('A friend request already exists between you');
-      all.unshift({ ...newRequest, id: 'req_' + Date.now() });
+      reqId = 'req_' + Date.now();
+      all.unshift({ ...newRequest, id: reqId });
       setLocal('friend_requests', all);
     } else {
-      await addDoc(collection(db, 'friendRequests'), newRequest);
+      const docRef = await addDoc(collection(db, 'friendRequests'), newRequest);
+      reqId = docRef.id;
     }
 
     // Send notification
@@ -1692,6 +2055,7 @@ export const dataService = {
       senderPhotoURL: fromUser.photoURL,
       title: 'Friend Request',
       description: `${fromUser.displayName} (@${fromUser.username}) sent you a friend request`,
+      actionData: { requestId: reqId, fromUid: fromUser.uid },
     });
   },
 
@@ -1699,20 +2063,27 @@ export const dataService = {
     if (!isFirebaseConfigured() || !db) {
       const all = getLocal<FriendRequest[]>('friend_requests', []);
       const req = all.find((r) => r.id === requestId);
-      if (req) {
+      if (req && req.status === 'pending') {
         req.status = accept ? 'accepted' : 'declined';
         req.updatedAt = Date.now();
         setLocal('friend_requests', all);
 
         if (accept) {
           const friendships = getLocal<Friendship[]>('friendships', []);
-          friendships.push({
-            id: 'fs_' + Date.now(),
-            user1Uid: req.fromUid,
-            user2Uid: req.toUid,
-            createdAt: Date.now(),
-          });
-          setLocal('friendships', friendships);
+          const already = friendships.some(
+            (f) =>
+              (f.user1Uid === req.fromUid && f.user2Uid === req.toUid) ||
+              (f.user1Uid === req.toUid && f.user2Uid === req.fromUid)
+          );
+          if (!already) {
+            friendships.push({
+              id: 'fs_' + Date.now(),
+              user1Uid: req.fromUid,
+              user2Uid: req.toUid,
+              createdAt: Date.now(),
+            });
+            setLocal('friendships', friendships);
+          }
 
           await dataService.createNotification({
             recipientUid: req.fromUid,
@@ -1732,6 +2103,7 @@ export const dataService = {
     const snap = await getDoc(ref);
     if (!snap.exists()) return;
     const req = snap.data() as FriendRequest;
+    if (req.status !== 'pending') return;
 
     await updateDoc(ref, {
       status: accept ? 'accepted' : 'declined',
@@ -1739,11 +2111,25 @@ export const dataService = {
     });
 
     if (accept) {
-      await addDoc(collection(db, 'friendships'), {
-        user1Uid: req.fromUid,
-        user2Uid: req.toUid,
-        createdAt: Date.now(),
-      });
+      // Check existing friendship to prevent duplicates
+      const qFs = query(
+        collection(db, 'friendships'),
+        where('user1Uid', 'in', [req.fromUid, req.toUid])
+      );
+      const fsSnap = await getDocs(qFs);
+      const alreadyFriends = fsSnap.docs.some(
+        (d) =>
+          (d.data().user1Uid === req.fromUid && d.data().user2Uid === req.toUid) ||
+          (d.data().user1Uid === req.toUid && d.data().user2Uid === req.fromUid)
+      );
+
+      if (!alreadyFriends) {
+        await addDoc(collection(db, 'friendships'), {
+          user1Uid: req.fromUid,
+          user2Uid: req.toUid,
+          createdAt: Date.now(),
+        });
+      }
 
       await dataService.createNotification({
         recipientUid: req.fromUid,
