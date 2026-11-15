@@ -1,0 +1,602 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Application: Splitify — Collaborative Expense Splitting Web Application
+// Project ID: splitify-151bd
+//
+// Collection: users
+// Document ID: {userId} (Firebase Auth UID)
+// Fields:
+//   - uid: string (required, immutable) - Firebase Auth UID
+//   - displayName: string (required, 1-100 chars) - User display name
+//   - email: string (required, <= 150 chars) - User email address
+//   - photoURL: string (optional, URL <= 2000 chars) - Avatar image URL
+//   - username: string (required, 1-30 chars, lowercase alphanumeric + underscore)
+//   - createdAt: number (required, immutable) - Epoch timestamp in milliseconds
+//   - serverCreatedAt: timestamp | number (optional, immutable) - Server timestamp
+//   - preferences: map (optional) - User preferences:
+//       * theme: string ('light' | 'dark' | 'system')
+//       * currency: string (<= 10 chars, e.g. 'INR')
+//   - discoverable: bool (optional) - Visibility in user search
+//
+// Collection: usernames
+// Document ID: {username} (Unique lowercase handle, e.g. "krish")
+// Fields:
+//   - uid: string (required, immutable) - Owning user UID
+//   - createdAt: number (required, immutable) - Registration epoch timestamp
+//
+// Collection: friendRequests
+// Document ID: {requestId}
+// Fields:
+//   - fromUid: string (required, immutable) - Sender UID
+//   - toUid: string (required, immutable) - Recipient UID
+//   - fromDisplayName: string (required, 1-100 chars) - Sender display name
+//   - fromUsername: string (required, 1-30 chars) - Sender handle
+//   - fromPhotoURL: string (optional, URL <= 2000 chars) - Sender avatar
+//   - toDisplayName: string (optional, <= 100 chars) - Recipient display name
+//   - toUsername: string (optional, <= 30 chars) - Recipient handle
+//   - toPhotoURL: string (optional, URL <= 2000 chars) - Recipient avatar
+//   - status: string (required, 'pending' | 'accepted' | 'declined' | 'cancelled')
+//   - createdAt: number (required, immutable) - Timestamp
+//   - updatedAt: number (required) - Timestamp of last status change
+//
+// Collection: friendships
+// Document ID: {friendshipId}
+// Fields:
+//   - user1Uid: string (required, immutable) - First friend UID
+//   - user2Uid: string (required, immutable) - Second friend UID
+//   - createdAt: number (required, immutable) - Established timestamp
+//
+// Collection: eventInvitations
+// Document ID: {invitationId}
+// Fields:
+//   - eventId: string (required, immutable) - Target event ID
+//   - eventName: string (required, 1-100 chars) - Event name
+//   - eventEmoji: string (optional, <= 20 chars) - Event emoji
+//   - fromUid: string (required, immutable) - Inviter UID
+//   - fromDisplayName: string (required, 1-100 chars) - Inviter display name
+//   - toUid: string (required, immutable) - Invitee UID
+//   - toDisplayName: string (optional, <= 100 chars) - Invitee display name
+//   - status: string (required, 'pending' | 'accepted' | 'declined')
+//   - createdAt: number (required, immutable) - Timestamp
+//
+// Collection: events
+// Document ID: {eventId}
+// Fields:
+//   - name: string (required, 1-100 chars) - Event title
+//   - emoji: string (required, <= 20 chars) - Event icon
+//   - currency: string (required, <= 10 chars, default 'INR')
+//   - hostUid: string (required, immutable) - Event creator UID
+//   - members: map (required, 1-100 members) - Map of UID to EventMember:
+//       * uid: string
+//       * displayName: string
+//       * photoURL: string (optional)
+//       * username: string (optional)
+//       * joinedAt: number
+//       * role: string ('host' | 'member')
+//   - joinCode: string (optional, <= 20 chars) - Public 6-char share code
+//   - createdAt: number (required, immutable) - Timestamp
+//   - updatedAt: number (required) - Timestamp
+//
+// Subcollection: events/{eventId}/items
+// Document ID: {itemId}
+// Fields:
+//   - eventId: string (required, immutable) - Parent event ID
+//   - name: string (required, 1-100 chars) - Bucket name (e.g. 'Food', '💸 Settlements')
+//   - emoji: string (required, <= 20 chars) - Category emoji
+//   - isSettlementsItem: bool (optional) - System settlements flag
+//   - createdAt: number (required, immutable) - Timestamp
+//   - updatedAt: number (required) - Timestamp
+//   - deleted: bool (optional) - Soft deletion flag
+//
+// Subcollection: events/{eventId}/expenses
+// Document ID: {expenseId}
+// Fields:
+//   - eventId: string (required, immutable) - Parent event ID
+//   - itemId: string (required, 1-128 chars) - Category/item ID
+//   - name: string (required, 1-100 chars) - Expense description
+//   - emoji: string (required, <= 20 chars) - Expense emoji
+//   - costMinor: number (required, >= 0) - Cost in minor currency units (paise/cents)
+//   - paidBy: string (required, 1-128 chars) - Payer UID
+//   - splitBy: string (required, 'equal' | 'amount') - Split mode
+//   - participants: list (required, 1-100 items) - Participant UIDs
+//   - shares: map (required, <= 100 entries) - UID -> minor unit allocation
+//   - comment: string (optional, <= 500 chars) - Notes
+//   - createdBy: string (required, immutable) - Creator UID
+//   - createdByName: string (required, 1-100 chars) - Creator display name
+//   - createdAt: number (required, immutable) - Timestamp
+//   - lastModifiedBy: string (required, 1-128 chars) - Last modifier UID
+//   - lastModifiedByName: string (required, 1-100 chars) - Last modifier name
+//   - lastModifiedAt: number (required) - Timestamp
+//   - deleted: bool (optional) - Soft deletion flag
+//   - deletedAt: number (optional) - Soft deletion timestamp
+//   - deletedBy: string (optional, <= 128 chars) - UID who deleted
+//   - auditLogs: list (required, <= 200 logs) - Audit trail entries
+//
+// Subcollection: events/{eventId}/settlements
+// Document ID: {settlementId}
+// Fields:
+//   - eventId: string (required, immutable) - Parent event ID
+//   - itemId: string (required, 1-128 chars) - Settlements item ID
+//   - payerUid: string (required, 1-128 chars) - Payer member UID
+//   - payerName: string (required, 1-100 chars) - Payer name
+//   - receiverUid: string (required, 1-128 chars) - Receiver member UID
+//   - receiverName: string (required, 1-100 chars) - Receiver name
+//   - amountMinor: number (required, > 0) - Settled amount in minor currency units
+//   - recordedBy: string (required, immutable) - Recorder UID
+//   - recordedByName: string (required, 1-100 chars) - Recorder name
+//   - createdAt: number (required, immutable) - Timestamp
+//   - formattedTimestamp: string (required, <= 50 chars) - Display timestamp
+//   - status: string (required, 'completed' | 'reversed') - Status
+//   - note: string (optional, <= 500 chars) - Settlement note
+//
+// Subcollection: users/{userId}/notifications
+// Document ID: {notificationId}
+// Fields:
+//   - recipientUid: string (required, immutable) - Recipient user UID (must match userId)
+//   - type: string (required, NotificationType)
+//   - senderUid: string (required, immutable) - Triggering user UID
+//   - senderName: string (required, 1-100 chars) - Sender display name
+//   - senderPhotoURL: string (optional, URL <= 2000 chars) - Sender avatar
+//   - eventId: string (optional, <= 128 chars) - Associated event ID
+//   - eventName: string (optional, <= 100 chars) - Associated event name
+//   - amountMinor: number (optional) - Associated money amount
+//   - title: string (required, 1-100 chars) - Notification title
+//   - description: string (required, 1-500 chars) - Body text
+//   - read: bool (required) - Read status
+//   - createdAt: number (required, immutable) - Timestamp
+//   - actionData: map (optional, <= 20 keys) - Custom payload
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Global Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches('^https://.*') || url.matches('^http://.*'));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    // Helper function checking event membership via existing doc or get() on parent event
+    function isEventMember(eventId) {
+      return isAuthenticated() && (
+        (resource != null && 'members' in resource.data && request.auth.uid in resource.data.members) ||
+        (exists(/databases/$(database)/documents/events/$(eventId)) &&
+         request.auth.uid in get(/databases/$(database)/documents/events/$(eventId)).data.members)
+      );
+    }
+
+    // ===============================================================
+    // Domain Validator Functions
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'username', 'createdAt']) &&
+             data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'username', 'createdAt', 'serverCreatedAt', 'preferences', 'discoverable']) &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.email is string && data.email.size() <= 150 &&
+             (data.email.size() == 0 || isValidEmail(data.email)) &&
+             data.username is string && data.username.size() >= 1 && data.username.size() <= 30 &&
+             data.username.matches('^[a-z0-9_]+$') &&
+             data.createdAt is number &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2000 && (data.photoURL.size() == 0 || isValidUrl(data.photoURL)))) &&
+             (!('serverCreatedAt' in data) || data.serverCreatedAt is timestamp || data.serverCreatedAt is number) &&
+             (!('discoverable' in data) || data.discoverable is bool) &&
+             (!('preferences' in data) || isValidPreferences(data.preferences));
+    }
+
+    function isValidPreferences(prefs) {
+      return prefs is map &&
+             prefs.keys().hasOnly(['theme', 'currency']) &&
+             (!('theme' in prefs) || prefs.theme in ['light', 'dark', 'system']) &&
+             (!('currency' in prefs) || (prefs.currency is string && prefs.currency.size() <= 10));
+    }
+
+    function isValidUsernameDoc(data) {
+      return data.keys().hasAll(['uid', 'createdAt']) &&
+             data.keys().hasOnly(['uid', 'createdAt']) &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.createdAt is number;
+    }
+
+    function isValidFriendRequest(data) {
+      return data.keys().hasAll(['fromUid', 'toUid', 'fromDisplayName', 'fromUsername', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['fromUid', 'toUid', 'fromDisplayName', 'fromUsername', 'fromPhotoURL', 'toDisplayName', 'toUsername', 'toPhotoURL', 'status', 'createdAt', 'updatedAt']) &&
+             data.fromUid is string && data.fromUid.size() >= 1 && data.fromUid.size() <= 128 &&
+             data.toUid is string && data.toUid.size() >= 1 && data.toUid.size() <= 128 &&
+             data.fromDisplayName is string && data.fromDisplayName.size() >= 1 && data.fromDisplayName.size() <= 100 &&
+             data.fromUsername is string && data.fromUsername.size() >= 1 && data.fromUsername.size() <= 30 &&
+             data.status in ['pending', 'accepted', 'declined', 'cancelled'] &&
+             data.createdAt is number &&
+             data.updatedAt is number &&
+             (!('fromPhotoURL' in data) || (data.fromPhotoURL is string && data.fromPhotoURL.size() <= 2000 && (data.fromPhotoURL.size() == 0 || isValidUrl(data.fromPhotoURL)))) &&
+             (!('toDisplayName' in data) || (data.toDisplayName is string && data.toDisplayName.size() <= 100)) &&
+             (!('toUsername' in data) || (data.toUsername is string && data.toUsername.size() <= 30)) &&
+             (!('toPhotoURL' in data) || (data.toPhotoURL is string && data.toPhotoURL.size() <= 2000 && (data.toPhotoURL.size() == 0 || isValidUrl(data.toPhotoURL))));
+    }
+
+    function isValidFriendship(data) {
+      return data.keys().hasAll(['user1Uid', 'user2Uid', 'createdAt']) &&
+             data.keys().hasOnly(['user1Uid', 'user2Uid', 'createdAt']) &&
+             data.user1Uid is string && data.user1Uid.size() >= 1 && data.user1Uid.size() <= 128 &&
+             data.user2Uid is string && data.user2Uid.size() >= 1 && data.user2Uid.size() <= 128 &&
+             data.user1Uid != data.user2Uid &&
+             data.createdAt is number;
+    }
+
+    function isValidEventInvitation(data) {
+      return data.keys().hasAll(['eventId', 'eventName', 'fromUid', 'fromDisplayName', 'toUid', 'status', 'createdAt']) &&
+             data.keys().hasOnly(['eventId', 'eventName', 'eventEmoji', 'fromUid', 'fromDisplayName', 'toUid', 'toDisplayName', 'status', 'createdAt']) &&
+             data.eventId is string && data.eventId.size() >= 1 && data.eventId.size() <= 128 &&
+             data.eventName is string && data.eventName.size() >= 1 && data.eventName.size() <= 100 &&
+             data.fromUid is string && data.fromUid.size() >= 1 && data.fromUid.size() <= 128 &&
+             data.fromDisplayName is string && data.fromDisplayName.size() >= 1 && data.fromDisplayName.size() <= 100 &&
+             data.toUid is string && data.toUid.size() >= 1 && data.toUid.size() <= 128 &&
+             data.status in ['pending', 'accepted', 'declined'] &&
+             data.createdAt is number &&
+             (!('eventEmoji' in data) || (data.eventEmoji is string && data.eventEmoji.size() <= 20)) &&
+             (!('toDisplayName' in data) || (data.toDisplayName is string && data.toDisplayName.size() <= 100));
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['name', 'emoji', 'currency', 'hostUid', 'members', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'emoji', 'currency', 'hostUid', 'members', 'joinCode', 'createdAt', 'updatedAt']) &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 20 &&
+             data.currency is string && data.currency.size() >= 1 && data.currency.size() <= 10 &&
+             data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
+             data.members is map && data.members.size() >= 1 && data.members.size() <= 100 &&
+             data.createdAt is number &&
+             data.updatedAt is number &&
+             (!('joinCode' in data) || (data.joinCode is string && data.joinCode.size() <= 20));
+    }
+
+    function isValidEventItem(data, eventId) {
+      return data.keys().hasAll(['eventId', 'name', 'emoji', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['eventId', 'name', 'emoji', 'isSettlementsItem', 'createdAt', 'updatedAt', 'deleted']) &&
+             data.eventId == eventId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 20 &&
+             data.createdAt is number &&
+             data.updatedAt is number &&
+             (!('isSettlementsItem' in data) || data.isSettlementsItem is bool) &&
+             (!('deleted' in data) || data.deleted is bool);
+    }
+
+    function isValidExpense(data, eventId) {
+      return data.keys().hasAll([
+               'eventId', 'itemId', 'name', 'emoji', 'costMinor',
+               'paidBy', 'splitBy', 'participants', 'shares',
+               'createdBy', 'createdByName', 'createdAt',
+               'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt', 'auditLogs'
+             ]) &&
+             data.keys().hasOnly([
+               'eventId', 'itemId', 'name', 'emoji', 'costMinor',
+               'paidBy', 'splitBy', 'participants', 'shares', 'comment',
+               'createdBy', 'createdByName', 'createdAt',
+               'lastModifiedBy', 'lastModifiedByName', 'lastModifiedAt',
+               'deleted', 'deletedAt', 'deletedBy', 'auditLogs'
+             ]) &&
+             data.eventId == eventId &&
+             data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 20 &&
+             data.costMinor is number && data.costMinor >= 0 &&
+             data.paidBy is string && data.paidBy.size() >= 1 && data.paidBy.size() <= 128 &&
+             data.splitBy in ['equal', 'amount'] &&
+             data.participants is list && data.participants.size() >= 1 && data.participants.size() <= 100 &&
+             data.shares is map && data.shares.size() <= 100 &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             data.createdAt is number &&
+             data.lastModifiedBy is string && data.lastModifiedBy.size() >= 1 && data.lastModifiedBy.size() <= 128 &&
+             data.lastModifiedByName is string && data.lastModifiedByName.size() >= 1 && data.lastModifiedByName.size() <= 100 &&
+             data.lastModifiedAt is number &&
+             data.auditLogs is list && data.auditLogs.size() <= 200 &&
+             (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
+             (!('deleted' in data) || data.deleted is bool) &&
+             (!('deletedAt' in data) || data.deletedAt is number) &&
+             (!('deletedBy' in data) || (data.deletedBy is string && data.deletedBy.size() <= 128));
+    }
+
+    function isValidSettlement(data, eventId) {
+      return data.keys().hasAll([
+               'eventId', 'itemId', 'payerUid', 'payerName',
+               'receiverUid', 'receiverName', 'amountMinor',
+               'recordedBy', 'recordedByName', 'createdAt',
+               'formattedTimestamp', 'status'
+             ]) &&
+             data.keys().hasOnly([
+               'eventId', 'itemId', 'payerUid', 'payerName',
+               'receiverUid', 'receiverName', 'amountMinor',
+               'recordedBy', 'recordedByName', 'createdAt',
+               'formattedTimestamp', 'status', 'note'
+             ]) &&
+             data.eventId == eventId &&
+             data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128 &&
+             data.payerUid is string && data.payerUid.size() >= 1 && data.payerUid.size() <= 128 &&
+             data.payerName is string && data.payerName.size() >= 1 && data.payerName.size() <= 100 &&
+             data.receiverUid is string && data.receiverUid.size() >= 1 && data.receiverUid.size() <= 128 &&
+             data.receiverName is string && data.receiverName.size() >= 1 && data.receiverName.size() <= 100 &&
+             data.payerUid != data.receiverUid &&
+             data.amountMinor is number && data.amountMinor > 0 &&
+             data.recordedBy is string && data.recordedBy.size() >= 1 && data.recordedBy.size() <= 128 &&
+             data.recordedByName is string && data.recordedByName.size() >= 1 && data.recordedByName.size() <= 100 &&
+             data.createdAt is number &&
+             data.formattedTimestamp is string && data.formattedTimestamp.size() <= 50 &&
+             data.status in ['completed', 'reversed'] &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500));
+    }
+
+    function isValidNotification(data, userId) {
+      return data.keys().hasAll([
+               'recipientUid', 'type', 'senderUid', 'senderName',
+               'title', 'description', 'read', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'recipientUid', 'type', 'senderUid', 'senderName',
+               'senderPhotoURL', 'eventId', 'eventName', 'amountMinor',
+               'title', 'description', 'read', 'createdAt', 'actionData'
+             ]) &&
+             data.recipientUid == userId &&
+             data.type in [
+               'friend_request_received',
+               'friend_request_accepted',
+               'event_invitation_received',
+               'event_invitation_accepted',
+               'event_join_request_received',
+               'expense_created',
+               'expense_modified',
+               'expense_deleted',
+               'event_name_modified',
+               'settlement_recorded',
+               'payment_reminder'
+             ] &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
+             data.read is bool &&
+             data.createdAt is number &&
+             (!('senderPhotoURL' in data) || (data.senderPhotoURL is string && data.senderPhotoURL.size() <= 2000 && (data.senderPhotoURL.size() == 0 || isValidUrl(data.senderPhotoURL)))) &&
+             (!('eventId' in data) || (data.eventId is string && data.eventId.size() <= 128)) &&
+             (!('eventName' in data) || (data.eventName is string && data.eventName.size() <= 100)) &&
+             (!('amountMinor' in data) || data.amountMinor is number) &&
+             (!('actionData' in data) || (data.actionData is map && data.actionData.size() <= 20));
+    }
+
+    // ===============================================================
+    // Root Match & Collection Rules
+    // ===============================================================
+
+    // Default Deny: All paths closed unless explicitly matched
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      // Authenticated users can read profiles for discovery, friend search, and member listing
+      allow read: if isAuthenticated();
+
+      // Owner only can create and update profile
+      allow create: if isOwner(userId) &&
+                       uidUnchanged() &&
+                       isValidUser(request.resource.data);
+
+      allow update: if isOwner(userId) &&
+                       uidNotModified() &&
+                       areImmutableFieldsUnchanged(['uid', 'createdAt']) &&
+                       isValidUser(request.resource.data);
+
+      allow delete: if isOwner(userId);
+
+      // 7. Notifications subcollection
+      match /notifications/{notificationId} {
+        // Only recipient can read, update (mark read), or delete notifications
+        allow read: if isOwner(userId);
+
+        // Any authenticated user acting as senderUid can create a notification directed to recipient
+        allow create: if isAuthenticated() &&
+                         request.auth.uid == request.resource.data.senderUid &&
+                         isValidNotification(request.resource.data, userId);
+
+        allow update: if isOwner(userId) &&
+                         areImmutableFieldsUnchanged(['recipientUid', 'type', 'senderUid', 'createdAt']) &&
+                         isValidNotification(request.resource.data, userId);
+
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // 2. Unique Usernames registry
+    match /usernames/{username} {
+      allow read: if isAuthenticated();
+
+      // User claims their own unique handle
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.uid &&
+                       username.size() >= 1 &&
+                       username.size() <= 30 &&
+                       username.matches('^[a-z0-9_]+$') &&
+                       isValidUsernameDoc(request.resource.data);
+
+      allow update: if isAuthenticated() &&
+                       request.auth.uid == resource.data.uid &&
+                       areImmutableFieldsUnchanged(['uid', 'createdAt']) &&
+                       isValidUsernameDoc(request.resource.data);
+
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    // 3. Friend Requests
+    match /friendRequests/{requestId} {
+      // Only the sender and recipient can read
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+
+      // Sender creates a pending friend request to a different user
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.fromUid &&
+                       request.resource.data.fromUid != request.resource.data.toUid &&
+                       request.resource.data.status == 'pending' &&
+                       isValidFriendRequest(request.resource.data);
+
+      // Either party can update status (accept/decline/cancel)
+      allow update: if isAuthenticated() &&
+                       (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid) &&
+                       areImmutableFieldsUnchanged(['fromUid', 'toUid', 'createdAt']) &&
+                       isValidFriendRequest(request.resource.data);
+
+      // Either party can delete request
+      allow delete: if isAuthenticated() &&
+                       (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+    }
+
+    // 4. Friendships
+    match /friendships/{friendshipId} {
+      // Either friend can read their friendship
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid == resource.data.user1Uid || request.auth.uid == resource.data.user2Uid);
+
+      // Either friend can create the friendship record
+      allow create: if isAuthenticated() &&
+                       (request.auth.uid == request.resource.data.user1Uid || request.auth.uid == request.resource.data.user2Uid) &&
+                       isValidFriendship(request.resource.data);
+
+      // Friendships are immutable once established
+      allow update: if false;
+
+      // Either friend can remove friendship
+      allow delete: if isAuthenticated() &&
+                       (request.auth.uid == resource.data.user1Uid || request.auth.uid == resource.data.user2Uid);
+    }
+
+    // 5. Event Invitations
+    match /eventInvitations/{invitationId} {
+      // Inviter and invitee can read
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+
+      // Inviter creates invitation
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.fromUid &&
+                       request.resource.data.fromUid != request.resource.data.toUid &&
+                       request.resource.data.status == 'pending' &&
+                       isValidEventInvitation(request.resource.data);
+
+      // Inviter or invitee can update status (accept/decline)
+      allow update: if isAuthenticated() &&
+                       (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid) &&
+                       areImmutableFieldsUnchanged(['eventId', 'fromUid', 'toUid', 'createdAt']) &&
+                       isValidEventInvitation(request.resource.data);
+
+      // Either party can delete invitation
+      allow delete: if isAuthenticated() &&
+                       (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+    }
+
+    // 6. Events & Subcollections
+    match /events/{eventId} {
+      // Read allowed if user is a member of the event, or if event has a join code
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid in resource.data.members || resource.data.joinCode != null);
+
+      // Host creates event and must include themselves in members map
+      allow create: if isAuthenticated() &&
+                       request.auth.uid == request.resource.data.hostUid &&
+                       request.auth.uid in request.resource.data.members &&
+                       isValidEvent(request.resource.data);
+
+      // Existing member can update event, OR joining user can append themselves to members map
+      allow update: if isAuthenticated() &&
+                       (
+                         request.auth.uid in resource.data.members ||
+                         (
+                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+                           request.auth.uid in request.resource.data.members
+                         )
+                       ) &&
+                       areImmutableFieldsUnchanged(['hostUid', 'createdAt']) &&
+                       isValidEvent(request.resource.data);
+
+      // Host only can delete event
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.hostUid;
+
+      // Subcollection: items (expense categories/buckets & settlements container)
+      match /items/{itemId} {
+        allow read: if isEventMember(eventId);
+        allow create: if isEventMember(eventId) && isValidEventItem(request.resource.data, eventId);
+        allow update: if isEventMember(eventId) &&
+                         areImmutableFieldsUnchanged(['eventId', 'createdAt']) &&
+                         isValidEventItem(request.resource.data, eventId);
+        allow delete: if isEventMember(eventId);
+      }
+
+      // Subcollection: expenses
+      match /expenses/{expenseId} {
+        allow read: if isEventMember(eventId);
+
+        allow create: if isEventMember(eventId) &&
+                         request.auth.uid == request.resource.data.createdBy &&
+                         isValidExpense(request.resource.data, eventId);
+
+        allow update: if isEventMember(eventId) &&
+                         (
+                           request.auth.uid == request.resource.data.lastModifiedBy ||
+                           (request.resource.data.deleted == true && request.auth.uid == request.resource.data.deletedBy)
+                         ) &&
+                         areImmutableFieldsUnchanged(['eventId', 'createdBy', 'createdAt']) &&
+                         isValidExpense(request.resource.data, eventId);
+
+        allow delete: if isEventMember(eventId);
+      }
+
+      // Subcollection: settlements
+      match /settlements/{settlementId} {
+        allow read: if isEventMember(eventId);
+
+        allow create: if isEventMember(eventId) &&
+                         request.auth.uid == request.resource.data.recordedBy &&
+                         isValidSettlement(request.resource.data, eventId);
+
+        allow update: if isEventMember(eventId) &&
+                         areImmutableFieldsUnchanged(['eventId', 'recordedBy', 'createdAt']) &&
+                         isValidSettlement(request.resource.data, eventId);
+
+        allow delete: if isEventMember(eventId);
+      }
+    }
+  }
+}
