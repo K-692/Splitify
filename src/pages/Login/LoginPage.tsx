@@ -33,8 +33,15 @@ export const LoginPage: React.FC = () => {
       await signInWithGoogle();
       navigate(getDestination(), { replace: true });
     } catch (err: any) {
-      console.error(err);
-      setAuthError(err.message || 'Failed to authenticate with Google. Please try again.');
+      console.error('[Splitify Auth Error]:', err);
+      const msg = err?.message || String(err || '');
+      if (msg.includes('10:') || msg.includes('12500') || msg.toLowerCase().includes('developer error')) {
+        setAuthError(
+          'Google Sign-In configuration error (Code 10). Ensure the app SHA-1 fingerprint is added in Firebase Console and Support Email is configured.'
+        );
+      } else {
+        setAuthError(msg || 'Failed to authenticate with Google. Please try again.');
+      }
     }
   };
 

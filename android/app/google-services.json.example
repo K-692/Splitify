@@ -20,14 +20,10 @@
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAj7AHMZrfiCp7PBfZYQ9bZF1UEPtgq0AM"
+          "current_key": "YOUR_FIREBASE_API_KEY"
         }
       ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
+      "services": {}
     }
   ],
   "configuration_version": "1"

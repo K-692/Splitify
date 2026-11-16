@@ -329,6 +329,16 @@ Credentials can be configured via environment variables or a local `signing.prop
 - `SPLITIFY_KEY_ALIAS`: Alias of your release key (default: `splitify`)
 - `SPLITIFY_KEY_PASSWORD`: Key password
 
+### 🔑 Google Sign-In & Firebase Configuration (Android)
+To enable Google Sign-In on Android devices with Firebase:
+1. **Never commit `google-services.json`:** The file contains project metadata and keys. It is excluded in `.gitignore` and kept local.
+2. **Register SHA-1 & SHA-256 Fingerprints in Firebase:**
+   In [Firebase Console](https://console.firebase.google.com/project/splitify-151bd/settings/general) under **Your apps > Android app (`com.splitify.app`)**, add the signing certificate fingerprints:
+   - **SHA-1:** `3E:D3:B6:59:FA:74:97:C4:CA:B0:DA:04:CF:98:96:FF:49:2C:B9:DF`
+   - **SHA-256:** `3C:53:57:69:5C:26:40:A6:A7:66:4F:AA:B1:F9:EE:0A:1F:0D:48:88:8F:E2:B3:6A:3F:03:BD:32:17:71:50:78`
+3. **Configure Support Email:** In Firebase Console > Project Settings > General, select a **Support email**. Without this, Google OAuth rejects sign-in attempts with error `10: DEVELOPER_ERROR`.
+4. **Download `google-services.json`:** Place the downloaded configuration in `android/app/google-services.json`. It will be used by Gradle during the build without ever being committed to GitHub.
+
 ---
 
 ## 📄 License
