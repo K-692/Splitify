@@ -15,6 +15,11 @@ export const Avatar: React.FC<AvatarProps> = ({
 }) => {
   const [imageError, setImageError] = React.useState(false);
 
+  // Reset error state whenever the image source changes
+  React.useEffect(() => {
+    setImageError(false);
+  }, [src]);
+
   const sizes = {
     xs: 'w-6 h-6 text-[10px]',
     sm: 'w-8 h-8 text-xs',
@@ -54,6 +59,7 @@ export const Avatar: React.FC<AvatarProps> = ({
       <img
         src={src}
         alt={name}
+        referrerPolicy="no-referrer"
         onError={() => setImageError(true)}
         className={`${sizes[size]} rounded-full object-cover border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0 ${className}`}
       />

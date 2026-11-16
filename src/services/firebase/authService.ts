@@ -2,6 +2,7 @@ import {
   signInWithPopup,
   signInWithRedirect,
   signInWithCredential,
+  updateProfile as fbUpdateProfile,
   GoogleAuthProvider,
   signOut as fbSignOut,
   onAuthStateChanged,
@@ -103,11 +104,15 @@ export const authService = {
         console.error('[Splitify] Error fetching user profile:', err);
         // Fallback profile if Firestore is momentarily unreachable
         const fallbackName = getFirstName(fbUser.displayName || fbUser.email?.split('@')[0] || 'User');
+        const fallbackPhoto =
+          fbUser.photoURL ||
+          fbUser.providerData?.find((p) => p.photoURL)?.photoURL ||
+          undefined;
         callback({
           uid: fbUser.uid,
           displayName: fallbackName,
           email: fbUser.email || '',
-          photoURL: fbUser.photoURL || undefined,
+          photoURL: fallbackPhoto,
           createdAt: Date.now(),
         });
       }
@@ -115,16 +120,31 @@ export const authService = {
   },
 
   /**
-   * Fetch or create user profile in Firestore
+   * Fetch or create user profile in Firestore, ensuring Google profile photo is always preserved and synced
    */
-  async getOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
+  async getOrCreateProfile(fbUser: FirebaseUser, overridePhotoURL?: string): Promise<UserProfile> {
     if (!db) throw new Error('Firestore not initialized');
+
+    // Prioritize explicitly passed photoURL (e.g. from native GoogleAuth.imageUrl), then fbUser.photoURL, then providerData
+    const resolvedPhotoURL =
+      overridePhotoURL ||
+      fbUser.photoURL ||
+      fbUser.providerData?.find((p) => p.photoURL)?.photoURL ||
+      undefined;
 
     const userRef = doc(db, 'users', fbUser.uid);
     const snap = await getDoc(userRef);
 
     if (snap.exists()) {
-      return snap.data() as UserProfile;
+      const existingData = snap.data() as UserProfile;
+      // If Firestore profile is missing photoURL or has a new photoURL from Google, sync it!
+      if (resolvedPhotoURL && (!existingData.photoURL || (overridePhotoURL && existingData.photoURL !== overridePhotoURL))) {
+        existingData.photoURL = resolvedPhotoURL;
+        updateDoc(userRef, { photoURL: resolvedPhotoURL }).catch((err) =>
+          console.warn('[Splitify] Could not sync photoURL to Firestore:', err)
+        );
+      }
+      return existingData;
     }
 
     // Default to the first name from Gmail display name or email username
@@ -135,7 +155,7 @@ export const authService = {
       uid: fbUser.uid,
       displayName: initialFirstName,
       email: fbUser.email || '',
-      photoURL: fbUser.photoURL || undefined,
+      photoURL: resolvedPhotoURL,
       createdAt: Date.now(),
       preferences: {
         theme: 'system',
@@ -207,6 +227,30 @@ export const authService = {
         const credential = GoogleAuthProvider.credential(idToken);
         const userCredential = await signInWithCredential(auth, credential);
         console.log('[Splitify Native Auth] Firebase authentication succeeded for UID:', userCredential.user.uid);
+
+        // 5. Propagate Google profile photo URL
+        const photoURL =
+          googleUser?.imageUrl ||
+          googleUser?.photoUrl ||
+          userCredential.user.photoURL ||
+          userCredential.user.providerData?.find((p) => p.photoURL)?.photoURL ||
+          undefined;
+
+        if (photoURL) {
+          console.log('[Splitify Native Auth] Propagating Google profile photo:', photoURL);
+          if (!userCredential.user.photoURL) {
+            try {
+              await fbUpdateProfile(userCredential.user, { photoURL });
+            } catch (pErr) {
+              console.warn('[Splitify Native Auth] Notice updating Firebase Auth user photoURL:', pErr);
+            }
+          }
+          try {
+            await authService.getOrCreateProfile(userCredential.user, photoURL);
+          } catch (fsErr) {
+            console.warn('[Splitify Native Auth] Notice syncing photoURL to Firestore:', fsErr);
+          }
+        }
         return;
       } catch (firebaseErr: any) {
         console.error('[Splitify Native Auth] Firebase signInWithCredential failed:', firebaseErr);
@@ -215,7 +259,14 @@ export const authService = {
     }
 
     try {
-      await signInWithPopup(auth, googleProvider);
+      const userCredential = await signInWithPopup(auth, googleProvider);
+      const photoURL =
+        userCredential.user.photoURL ||
+        userCredential.user.providerData?.find((p) => p.photoURL)?.photoURL ||
+        undefined;
+      if (photoURL) {
+        await authService.getOrCreateProfile(userCredential.user, photoURL);
+      }
     } catch (popupError: any) {
       console.warn('[Splitify] Popup blocked or failed, falling back to redirect:', popupError);
       if (

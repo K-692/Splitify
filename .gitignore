@@ -36,6 +36,7 @@ google-services.json
 *.keystore
 signing.properties
 *.apk
+!Splitify-v1.0.0.apk
 *.aab
 
 # Test and coverage
