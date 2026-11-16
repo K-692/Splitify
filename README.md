@@ -44,35 +44,37 @@ With Splitify, manual calculations are completely eliminated. The application au
 - Profile customization, avatars, and persistent authentication sessions.
 
 ### 2. 🧾 Item-First Expense Architecture & Categories
-Splitify adopts an **Item-First architecture** designed for speed and flexibility:
+Splitify adopts an **Item-First architecture** designed for speed, flexibility, and collaborative transparency:
 - **Instant Direct Expenses:** When recording an expense (e.g. Airport Cab ₹1,200), it is created directly as a standalone item with its own cost, payer, split mode, and participants.
 - **One-Click Category Conversion:** Any standalone item can be converted into a category whenever additional subitems need to be logged (e.g., converting "Food" into a category with "Breakfast" and "Dinner" subitems).
 - **Zero Data Loss:** When converting, existing expense details are automatically preserved as the first subitem.
 - **No Double-Counting:** Category items dynamically calculate their total from their active subitems, while standalone items report their direct cost.
-- **Entry Creator Ownership:** Whoever creates an entry (standalone expense, category, or subitem) owns that entry and is the only person who can edit or delete it before dues are settled.
-- **All-Settled Deletion Rule:** When all dues are settled among all people for an event, any member from that event can delete all entries.
-- **Discrepancy Notes:** Any event member can view and leave discrepancy notes on any expense item, category, subitem, or settlement entry if they notice any discrepancy.
+- **Universal Modification & Deletion with Event-Wide Alerts:** Any member of an event can modify or delete any item, subitem, or category. When an item or subitem is modified or deleted, an alert notification is automatically dispatched to all members of that event, identifying the actor by their Splitify handle (`@handle`).
+- **Master "Select All" Checkbox:** A convenient master checkbox in the event items header selects all standalone items and subitems with one click, allowing any user to bulk-delete all event items instantly.
+- **Item Information Modal ("i" Button):** Every standalone item, category, and subitem includes an information button ("i") that opens a detailed modal showing emoji, item name, parent category, total cost, date, time, payer handle, split mode, and a complete participant breakdown with individual shares and quick "+ Add Friend" buttons for non-friends.
 
 ### 3. 🔗 Event Invitation Links (No Join Codes)
 - **Unique Shareable URLs:** Every event generates clean invitation URLs (e.g. `https://k-692.github.io/Splitify/join/<token>`). No hashes (`#`) in URLs thanks to modern GitHub Pages SPA routing with `404.html`. Join Codes are completely removed.
+- **Accurate Real-Time Member Count:** Join invitations reliably display the accurate live count of already joined members (`Members already joined: N`) both for authenticated members and prospective invitees before signing in.
 - **Copy Link Invitation:** One-click copying of invitation links with full event access or selected-item scopes.
 - **Flexible Scopes:**
   - **Full Event Access:** Invitees can view and participate in all event expenses.
   - **Selected Items Only:** Restrict invitees to specific items (e.g., someone only joining for the cab or hotel).
-- **Smooth Invitation Onboarding:** Unauthenticated visitors are guided to Google sign-in and returned directly to the invitation to claim an expected person slot or join as a new person.
+- **Smooth Invitation Onboarding:** Unauthenticated visitors preview event details, joined member counts, and inviter handle (`@handle`), and are guided to sign in to claim an expected person slot or join as a new person.
 
 ### 4. 👥 Individual Person Slots ("People")
-- **Expected Participant Placeholders:** Hosts can specify expected people during event creation via inline chips (e.g., "Rahul", "Priya") or add them later in the **People** screen.
-- **Slot Claiming:** When an invitee joins via an invitation link, they can claim their dedicated spot (e.g., "Claim spot for Rahul") or join as a new participant.
-- **Protection of Claimed Slots:** Claimed slots display the joined member's avatar and first name with a `✓ Joined` badge and cannot be deleted. Unclaimed placeholders can be removed by the host.
+- **Expected Participant Placeholders:** Hosts can specify expected people during event creation via inline chips or add them later in the **People** screen.
+- **Slot Claiming & Creation:** When an invitee joins via an invitation link, they can claim their dedicated spot (e.g., "Claim spot for @rahul") or create a new slot to join.
+- **Automatic Expense & Settlement Resolution:** Claimed slots are immediately resolved to the joined member's UID and Splitify handle (`@handle`) across all calculations, optimal settlements, and member totals.
+- **Protection of Claimed Slots:** Claimed slots display the joined member's avatar and handle with a `✓ Joined` badge and cannot be deleted. Unclaimed placeholders can be removed by the host.
 
 ### 5. 🧾 Expense Creation Wizard & Subitem Categories
 - **"Do you have subitems? ☑" Checkbox:**
   - **Unchecked (Standalone Expense):** Quick entry with description, amount, calendar date picker (`YYYY-MM-DD`), payer, split mode, and participants.
   - **Checked (Category with Subitems):** Step 1 prompts for Category Name -> Step 2 allows staging multiple subitems with dynamic total computation.
-- **Creator Ownership & Dues-Settled Deletion:** Entry creators retain exclusive modification rights until all event dues are settled, after which any member can clean up entries.
-- **Discrepancy Notes:** All members can attach and review discrepancy notes on any item, subitem, or settlement.
-- **First Name Display:** User names are cleanly rendered using their first names throughout the entire app (e.g. "Krishnendu", "Rahul", "Priya").
+- **Universal Collaborative Control:** Any member can edit or delete items, with automatic event-wide notifications informing all participants.
+- **Splitify Handle Identification:** Members are consistently identified by their Splitify handle (`@username`) across cards, optimal settlements, member totals, and notifications, rather than raw first names.
+- **Direct "+ Add Friend" Action:** Non-friends in events and item breakdowns display an "+ Add Friend" button, allowing members to connect with a single click.
 
 ### 6. 📋 Copy Expenses — Plain-Text Export
 - Prominent **"Copy Expenses"** button on event details.
@@ -84,7 +86,7 @@ Splitify adopts an **Item-First architecture** designed for speed and flexibilit
 - **Voluntary Leave (Members):** Members can leave an event voluntarily. Hosts cannot kick members. If an unsettled balance exists, a clear warning is displayed. On leaving, the member's claimed person slot is automatically released.
 
 ### 8. 🏷️ Splitify Handle Renaming & Smart Suggestions
-- **Unlimited Renaming:** Users can update their `@handle` in Profile/Settings whenever they choose.
+- **Unlimited Renaming:** Users can update their `@handle` in Profile whenever they choose.
 - **Smart Handle Suggestions:** When a requested handle is unavailable, Splitify dynamically generates candidate suggestions derived from the user's name and handle, verifying real-time availability in Firestore.
 - **Atomic Firestore Transactions:** Ensures handle reservation, old handle release, and profile updates occur atomically and enforce case-insensitive uniqueness in `usernames/{handle.toLowerCase()}` without permission errors.
 
@@ -115,9 +117,11 @@ Splitify adopts an **Item-First architecture** designed for speed and flexibilit
 - **Universal Friend Request Actions:** Reusable `Accept` and `Decline` controls available everywhere an incoming request is displayed: Friends tab (Received Requests), search results (if an incoming request exists), and the Notifications inbox.
 - **Dedicated Event Invitations Section:** The Friends page features 3 dedicated tabs:
   1. *My Friends* (with direct event invitation modal).
-  2. *Friend Requests* (Received & Sent requests with real-time badges).
-  3. *Event Invitations* (real-time invitations from friends to join events with event emoji, name, inviter first name, date/time, and one-click Accept/Decline actions).
+  2. *Friend Requests* (Received and Sent requests with real-time badges).
+  3. *Event Invitations* (real-time invitations from friends to join events with event emoji, name, inviter handle `@handle`, date/time, and one-click Accept/Decline actions).
 - **Search Users by Handle:** Real-time lookup with atomic Firestore security rules and profile caching.
+- **30-Day Auto-Purge:** Notifications and activities older than 30 days are automatically pruned in the background, keeping user inboxes responsive and clutter-free.
+- **Streamlined UI Text:** All sections, titles, and tabs use the single most relevant name (e.g. *Settlements*, *Profile*, *People*, *Friends*, *Notifications*), keeping the interface clean and concise.
 
 ### 10. 🎨 Brand Identity, Mobile Responsiveness & Polished UI/UX
 - Official palette derived from the Splitify logo:

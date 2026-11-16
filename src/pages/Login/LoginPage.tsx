@@ -52,7 +52,7 @@ export const LoginPage: React.FC = () => {
 
         {/* Tagline right after logo (no Splitify text) */}
         <p className="text-sm sm:text-base font-bold text-slate-600 dark:text-slate-300 max-w-xs mx-auto leading-relaxed">
-          Collaborative Expense Splitting for Trips, Roommates & Friends
+          Collaborative Expense Splitting for Trips, Roommates, Friends
         </p>
 
         {/* Error Alert Display */}
@@ -128,11 +128,11 @@ export const LoginPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0" />
-            <span>Hierarchical items, subitems, and discrepancy notes</span>
+            <span>Hierarchical items, subitems, and item details</span>
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0" />
-            <span>Debt simplification & one-click 💸 Settled! flow</span>
+            <span>Debt simplification with one-click 💸 Settled! flow</span>
           </div>
         </div>
       </div>

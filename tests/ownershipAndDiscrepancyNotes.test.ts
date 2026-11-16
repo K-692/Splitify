@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dataService } from '@/services/dataService';
-import { UserProfile } from '@/types';
+import { UserProfile, AppNotification } from '@/types';
 
 // Mock isFirebaseConfigured to false for deterministic local offline unit tests
 vi.mock('@/services/firebase/config', () => ({
@@ -9,7 +9,7 @@ vi.mock('@/services/firebase/config', () => ({
   isFirebaseConfigured: () => false,
 }));
 
-describe('Entry Creator Ownership, All-Settled Deletion, and Discrepancy Notes', () => {
+describe('Universal Item Modification, Deletion, Alert Notifications, and 30-Day Auto-Purge', () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -38,8 +38,13 @@ describe('Entry Creator Ownership, All-Settled Deletion, and Discrepancy Notes',
     createdAt: Date.now(),
   };
 
-  it('allows only entry creator to edit standalone item, but allows non-creator to delete once all settled', async () => {
+  it('allows any member to edit and delete standalone items, and notifies other members with handle', async () => {
     const eventId = await dataService.createEvent('Goa Trip', creatorUser);
+    const members = {
+      [creatorUser.uid]: creatorUser,
+      [otherUser.uid]: otherUser,
+      [thirdUser.uid]: thirdUser,
+    };
 
     // Creator creates standalone item
     const itemId = await dataService.createExpenseItem(
@@ -52,279 +57,207 @@ describe('Entry Creator Ownership, All-Settled Deletion, and Discrepancy Notes',
         participants: [creatorUser.uid, otherUser.uid],
       },
       creatorUser,
-      { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
+      members
     );
 
-    // 1. Creator can edit
+    // Any other member (Rahul) can update the item
     await expect(
       dataService.updateExpenseItem(
         eventId,
         itemId,
         { name: 'Beach Shack Seafood Feast' },
-        creatorUser,
-        { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
-      )
-    ).resolves.not.toThrow();
-
-    // 2. Non-creator cannot edit
-    await expect(
-      dataService.updateExpenseItem(
-        eventId,
-        itemId,
-        { name: 'Hacked Name' },
         otherUser,
-        { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
+        members
       )
-    ).rejects.toThrow('Only the creator can edit this expense item.');
-
-    // 3. Non-creator cannot delete before dues are settled
-    await expect(
-      dataService.deleteItem(eventId, itemId, otherUser, false)
-    ).rejects.toThrow('Only the creator can delete this item until all event dues are settled.');
-
-    // 4. Non-creator CAN delete when all dues are settled (isAllSettled: true)
-    await expect(
-      dataService.deleteItem(eventId, itemId, otherUser, true)
     ).resolves.not.toThrow();
 
-    const items = await dataService.getItems(eventId);
-    const item = items.find((i) => i.id === itemId);
-    expect(item).toBeUndefined();
+    // Verify notifications were sent to creator and thirdUser with @rahul handle
+    let rahulNotifs: AppNotification[] = [];
+    dataService.subscribeNotifications(creatorUser.uid, (n) => {
+      rahulNotifs = n;
+    })();
+    expect(rahulNotifs.length).toBeGreaterThan(0);
+    expect(rahulNotifs[0].senderName).toBe('@rahul');
+    expect(rahulNotifs[0].description).toContain('@rahul modified');
+
+    // Any other member (Priya) can delete the item
+    await expect(
+      dataService.deleteItem(eventId, itemId, thirdUser, members)
+    ).resolves.not.toThrow();
+
+    // Verify deletion notification sent with @priya handle
+    let priyaNotifs: AppNotification[] = [];
+    dataService.subscribeNotifications(otherUser.uid, (n) => {
+      priyaNotifs = n;
+    })();
+    expect(priyaNotifs.length).toBeGreaterThan(0);
+    expect(priyaNotifs[0].senderName).toBe('@priya');
+    expect(priyaNotifs[0].description).toContain('@priya deleted');
   });
 
-  it('allows only category creator to edit category, but allows any member to delete when all settled', async () => {
+  it('allows any member to convert items, edit categories, and delete categories', async () => {
     const eventId = await dataService.createEvent('Birthday Party', creatorUser);
+    const members = {
+      [creatorUser.uid]: creatorUser,
+      [otherUser.uid]: otherUser,
+    };
 
-    const categoryId = await dataService.createItem(eventId, 'Drinks & Beverages', creatorUser);
-    await dataService.convertItemToCategory(eventId, categoryId, creatorUser);
+    const categoryId = await dataService.createItem(eventId, 'Beverages', creatorUser);
 
-    // 1. Creator can update category name
+    // Other user converts to category
     await expect(
-      dataService.updateItemName(eventId, categoryId, 'Cocktails & Mocktails', '🍹', creatorUser)
+      dataService.convertItemToCategory(eventId, categoryId, otherUser, members)
     ).resolves.not.toThrow();
 
-    // 2. Non-creator cannot update category name
+    // Other user renames category
     await expect(
-      dataService.updateItemName(eventId, categoryId, 'Tea & Water', '☕', otherUser)
-    ).rejects.toThrow('Only the creator can edit this category.');
-
-    // 3. Non-creator cannot delete category before settlement
-    await expect(
-      dataService.deleteItem(eventId, categoryId, otherUser, false)
-    ).rejects.toThrow('Only the creator can delete this item until all event dues are settled.');
-
-    // 4. Non-creator CAN delete category when isAllSettled: true
-    await expect(
-      dataService.deleteItem(eventId, categoryId, otherUser, true)
+      dataService.updateItemName(eventId, categoryId, 'Drinks and Mocktails', '🍹', otherUser, members)
     ).resolves.not.toThrow();
-  });
 
-  it('enforces creator ownership on subitems, allowing non-owners to delete only when all settled', async () => {
-    const eventId = await dataService.createEvent('Apartment Expenses', creatorUser);
-
-    const categoryId = await dataService.createItem(eventId, 'Groceries', creatorUser);
-    await dataService.convertItemToCategory(eventId, categoryId, creatorUser);
-
-    // Other user adds a subitem (they own this subitem!)
-    const expenseId = await dataService.createExpense(
+    // Other user creates subitem
+    const subitemId = await dataService.createExpense(
       {
         eventId,
         itemId: categoryId,
-        name: 'Milk & Bread',
-        costMinor: 15000,
+        name: 'Fruit Punch',
+        costMinor: 50000,
         paidBy: otherUser.uid,
         splitBy: 'equal',
         participants: [creatorUser.uid, otherUser.uid],
       },
       otherUser,
-      { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
+      members
     );
 
-    // Other user (the creator of the subitem) can edit
+    // Creator edits other user subitem
     await expect(
       dataService.updateExpense(
         eventId,
-        expenseId,
-        { name: 'Organic Milk & Bread' },
-        otherUser,
-        { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
+        subitemId,
+        { name: 'Special Mango Punch' },
+        creatorUser,
+        members
       )
     ).resolves.not.toThrow();
 
-    // Event creator (who is NOT subitem creator) cannot edit this subitem
+    // Creator deletes subitem
     await expect(
-      dataService.updateExpense(
-        eventId,
-        expenseId,
-        { name: 'Fake Milk' },
-        creatorUser,
-        { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
-      )
-    ).rejects.toThrow('Only the creator can edit this subitem.');
-
-    // Non-owner cannot delete single expense before settlement
-    await expect(
-      dataService.deleteExpense(
-        eventId,
-        expenseId,
-        creatorUser,
-        { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser },
-        false
-      )
-    ).rejects.toThrow('Only the creator can delete this subitem until all event dues are settled.');
-
-    // Non-owner CAN delete when isAllSettled is true
-    await expect(
-      dataService.deleteExpense(
-        eventId,
-        expenseId,
-        creatorUser,
-        { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser },
-        true
-      )
+      dataService.deleteExpense(eventId, subitemId, creatorUser, members)
     ).resolves.not.toThrow();
   });
 
-  it('restricts settlement deletion to involved parties before settlement, allows any member when all settled', async () => {
-    const eventId = await dataService.createEvent('Trip', creatorUser);
+  it('allows bulk deleting all event items and subitems, notifying event members', async () => {
+    const eventId = await dataService.createEvent('Road Trip', creatorUser);
+    const members = {
+      [creatorUser.uid]: creatorUser,
+      [otherUser.uid]: otherUser,
+    };
 
-    const settlementId1 = await dataService.recordSettlement(
+    const item1 = await dataService.createExpenseItem(
       {
         eventId,
-        payerUid: otherUser.uid,
-        payerName: otherUser.displayName,
-        receiverUid: creatorUser.uid,
-        receiverName: creatorUser.displayName,
-        amountMinor: 50000,
-        note: 'Settling debt',
-      },
-      otherUser
-    );
-
-    // Third user (uninvolved) cannot delete before all settled
-    await expect(
-      dataService.deleteSettlement(eventId, settlementId1, thirdUser, false)
-    ).rejects.toThrow('Only the parties involved can delete this settlement until all event dues are settled.');
-
-    // Involved party CAN delete before all settled
-    const settlementId2 = await dataService.recordSettlement(
-      {
-        eventId,
-        payerUid: otherUser.uid,
-        payerName: otherUser.displayName,
-        receiverUid: creatorUser.uid,
-        receiverName: creatorUser.displayName,
-        amountMinor: 25000,
-        note: 'Settling remainder',
-      },
-      otherUser
-    );
-
-    await expect(
-      dataService.deleteSettlement(eventId, settlementId2, creatorUser, false)
-    ).resolves.not.toThrow();
-
-    // Third user CAN delete when isAllSettled is true
-    const settlementId3 = await dataService.recordSettlement(
-      {
-        eventId,
-        payerUid: otherUser.uid,
-        payerName: otherUser.displayName,
-        receiverUid: creatorUser.uid,
-        receiverName: creatorUser.displayName,
-        amountMinor: 10000,
-        note: 'Settling last part',
-      },
-      otherUser
-    );
-
-    await expect(
-      dataService.deleteSettlement(eventId, settlementId3, thirdUser, true)
-    ).resolves.not.toThrow();
-  });
-
-  it('allows any member to add discrepancy notes to items, subitems, and settlements', async () => {
-    const eventId = await dataService.createEvent('Camping Trip', creatorUser);
-
-    const itemId = await dataService.createExpenseItem(
-      {
-        eventId,
-        name: 'Tent Rental',
-        costMinor: 400000,
+        name: 'Fuel',
+        costMinor: 300000,
         paidBy: creatorUser.uid,
         splitBy: 'equal',
         participants: [creatorUser.uid, otherUser.uid],
       },
       creatorUser,
-      { [creatorUser.uid]: creatorUser, [otherUser.uid]: otherUser }
+      members
     );
 
-    // Other user leaves a discrepancy note on the item
-    const note1 = await dataService.addDiscrepancyNote(
-      eventId,
-      'item',
-      itemId,
-      'I thought tent rental was covered by coupon, please verify receipt',
-      otherUser
-    );
-
-    expect(note1.authorUid).toBe(otherUser.uid);
-    expect(note1.authorName).toBe('Rahul');
-    expect(note1.text).toContain('coupon');
-
-    let items = await dataService.getItems(eventId);
-    let item = items.find((i) => i.id === itemId);
-    expect(item?.discrepancyNotes?.length).toBe(1);
-    expect(item?.discrepancyNotes?.[0].text).toBe(note1.text);
-
-    // Third user also adds a note
-    const note2 = await dataService.addDiscrepancyNote(
-      eventId,
-      'item',
-      itemId,
-      'Also I was not sharing this tent',
-      thirdUser
-    );
-
-    items = await dataService.getItems(eventId);
-    item = items.find((i) => i.id === itemId);
-    expect(item?.discrepancyNotes?.length).toBe(2);
-
-    // Third user cannot delete otherUser's note
-    await dataService.deleteDiscrepancyNote(eventId, 'item', itemId, note1.id, thirdUser.uid);
-    items = await dataService.getItems(eventId);
-    item = items.find((i) => i.id === itemId);
-    expect(item?.discrepancyNotes?.length).toBe(2); // Still 2! Not deleted.
-
-    // otherUser deletes their own note
-    await dataService.deleteDiscrepancyNote(eventId, 'item', itemId, note1.id, otherUser.uid);
-    items = await dataService.getItems(eventId);
-    item = items.find((i) => i.id === itemId);
-    expect(item?.discrepancyNotes?.length).toBe(1);
-    expect(item?.discrepancyNotes?.[0].id).toBe(note2.id);
-
-    // Discrepancy note on a settlement
-    const settlementId = await dataService.recordSettlement(
+    const cat1 = await dataService.createItem(eventId, 'Snacks', creatorUser);
+    await dataService.convertItemToCategory(eventId, cat1, creatorUser);
+    const sub1 = await dataService.createExpense(
       {
         eventId,
-        payerUid: otherUser.uid,
-        payerName: otherUser.displayName,
-        receiverUid: creatorUser.uid,
-        receiverName: creatorUser.displayName,
-        amountMinor: 50000,
-        note: 'UPI payment',
+        itemId: cat1,
+        name: 'Chips',
+        costMinor: 20000,
+        paidBy: creatorUser.uid,
+        splitBy: 'equal',
+        participants: [creatorUser.uid, otherUser.uid],
       },
-      otherUser
+      creatorUser,
+      members
     );
 
-    const settlementNote = await dataService.addDiscrepancyNote(
-      eventId,
-      'settlement',
-      settlementId,
-      'Did not receive confirmation SMS on bank app',
-      creatorUser
+    // Bulk delete all items by other user
+    await expect(
+      dataService.bulkDeleteEventItems(
+        eventId,
+        [item1, cat1],
+        [sub1],
+        otherUser,
+        members,
+        'Road Trip'
+      )
+    ).resolves.not.toThrow();
+
+    // Verify notification was sent to creatorUser
+    let notifs: AppNotification[] = [];
+    dataService.subscribeNotifications(creatorUser.uid, (n) => {
+      notifs = n;
+    })();
+    expect(notifs.some((n) => n.title === 'Items Deleted' && n.senderName === '@rahul')).toBe(true);
+  });
+
+  it('automatically purges notifications older than 30 days', async () => {
+    const userId = 'user_test_notifs';
+    const now = Date.now();
+    const thirtyOneDaysAgo = now - 31 * 24 * 60 * 60 * 1000;
+    const tenDaysAgo = now - 10 * 24 * 60 * 60 * 1000;
+
+    // Seed raw local notifications
+    localStorage.setItem(
+      'splitify_store_notifications_' + userId,
+      JSON.stringify([
+        {
+          id: 'n_old',
+          recipientUid: userId,
+          type: 'expense_created',
+          senderUid: 'other',
+          senderName: '@friend',
+          title: 'Old notification',
+          description: '31 days old',
+          read: false,
+          createdAt: thirtyOneDaysAgo,
+        },
+        {
+          id: 'n_recent',
+          recipientUid: userId,
+          type: 'expense_created',
+          senderUid: 'other',
+          senderName: '@friend',
+          title: 'Recent notification',
+          description: '10 days old',
+          read: false,
+          createdAt: tenDaysAgo,
+        },
+      ])
     );
 
-    expect(settlementNote.authorUid).toBe(creatorUser.uid);
+    let deliveredNotifs: AppNotification[] = [];
+    const unsub = dataService.subscribeNotifications(userId, (n) => {
+      deliveredNotifs = n;
+    });
+    unsub();
+
+    // Verify that the 31-day old notification was purged
+    expect(deliveredNotifs.length).toBe(1);
+    expect(deliveredNotifs[0].id).toBe('n_recent');
+
+    // Storage is also updated
+    const saved = JSON.parse(localStorage.getItem('splitify_store_notifications_' + userId) || '[]');
+    expect(saved.length).toBe(1);
+    expect(saved[0].id).toBe('n_recent');
+  });
+
+  it('creates invitation link with accurate membersCount and actor handle', async () => {
+    const eventId = await dataService.createEvent('Summit Trek', creatorUser);
+    const link = await dataService.createInvitationLink(eventId, creatorUser);
+
+    expect(link.membersCount).toBe(1);
+    expect(link.createdByName).toBe('@krish');
   });
 });

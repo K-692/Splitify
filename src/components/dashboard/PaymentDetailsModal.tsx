@@ -220,7 +220,7 @@ export const PaymentDetailsModal: React.FC<PaymentDetailsModalProps> = ({
           </div>
         </div>
 
-        {/* Reference & Note */}
+        {/* Reference and Note */}
         <div>
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
             Payment Reference / Transaction ID (Optional)

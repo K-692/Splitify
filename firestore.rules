@@ -328,7 +328,7 @@ service cloud.firestore {
 
     function isValidInvitationLink(data) {
       return data.keys().hasAll(['token', 'eventId', 'eventName', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'usesCount']) &&
-             data.keys().hasOnly(['token', 'eventId', 'eventName', 'eventEmoji', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'allowedItemIds', 'availableSlots', 'revoked', 'usesCount', 'maxUses', 'expiresAt']) &&
+             data.keys().hasOnly(['token', 'eventId', 'eventName', 'eventEmoji', 'createdByUid', 'createdByName', 'createdAt', 'scope', 'allowedItemIds', 'availableSlots', 'revoked', 'usesCount', 'maxUses', 'expiresAt', 'membersCount']) &&
              data.token is string && data.token.size() >= 1 && data.token.size() <= 128 &&
              data.eventId is string && data.eventId.size() >= 1 && data.eventId.size() <= 128 &&
              data.eventName is string && data.eventName.size() >= 1 && data.eventName.size() <= 100 &&
@@ -342,7 +342,8 @@ service cloud.firestore {
              (!('availableSlots' in data) || (data.availableSlots is list && data.availableSlots.size() <= 50)) &&
              (!('revoked' in data) || data.revoked is bool) &&
              (!('maxUses' in data) || (data.maxUses is number && data.maxUses >= 1)) &&
-             (!('expiresAt' in data) || data.expiresAt is number);
+             (!('expiresAt' in data) || data.expiresAt is number) &&
+             (!('membersCount' in data) || (data.membersCount is number && data.membersCount >= 0));
     }
 
     function isValidEvent(data) {
@@ -725,7 +726,10 @@ service cloud.firestore {
                          ) ||
                          // Joining user increments usesCount
                          (
-                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usesCount']) &&
+                           (
+                             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usesCount']) ||
+                             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usesCount', 'membersCount'])
+                           ) &&
                            request.resource.data.usesCount == resource.data.usesCount + 1 &&
                            (!('revoked' in resource.data) || resource.data.revoked == false) &&
                            (!('maxUses' in resource.data) || resource.data.usesCount < resource.data.maxUses) &&
@@ -746,9 +750,9 @@ service cloud.firestore {
 
     // 7. Events & Subcollections
     match /events/{eventId} {
-      // Authenticated users can read event documents (metadata & slots)
+      // Event documents (metadata, members, slots) can be previewed by invitees with an invitation link or authenticated members
       // Subcollections (items, expenses, settlements) require isEventMember()
-      allow read: if isAuthenticated();
+      allow read: if true;
 
       // Host creates event and must include themselves in members map
       allow create: if isAuthenticated() &&

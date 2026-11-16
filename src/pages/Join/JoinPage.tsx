@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { dataService } from '@/services/dataService';
-import { SplitifyEvent, EventInvitationLink, EventSlot } from '@/types';
+import { SplitifyEvent, EventInvitationLink, EventSlot, EventMember } from '@/types';
 import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
 import { getFirstName } from '@/utils/name';
@@ -78,15 +78,12 @@ export const JoinPage: React.FC = () => {
 
         setInvitationLink(link);
 
-        // Fetch associated event details if user is authenticated;
-        // Otherwise safely construct the preview event from the invitation link
+        // Fetch associated event details
         let ev: SplitifyEvent | null = null;
-        if (user) {
-          try {
-            ev = await dataService.getEventById(link.eventId);
-          } catch {
-            ev = null;
-          }
+        try {
+          ev = await dataService.getEventById(link.eventId);
+        } catch {
+          ev = null;
         }
 
         if (!isMounted) return;
@@ -109,13 +106,25 @@ export const JoinPage: React.FC = () => {
             }
           }
 
+          const fallbackMembers: Record<string, EventMember> = {};
+          const count = Math.max(link.membersCount || 0, 1);
+          for (let i = 0; i < count; i++) {
+            fallbackMembers[`member_${i}`] = {
+              uid: `member_${i}`,
+              displayName: i === 0 ? link.createdByName : 'Member',
+              username: i === 0 ? link.createdByName.replace(/^@/, '') : `member_${i}`,
+              joinedAt: link.createdAt,
+              role: i === 0 ? 'host' : 'member',
+            };
+          }
+
           setEvent({
             id: link.eventId,
             name: link.eventName,
             emoji: link.eventEmoji || '🏖️',
             currency: 'INR',
             hostUid: link.createdByUid,
-            members: {},
+            members: fallbackMembers,
             slots: previewSlots,
             createdAt: link.createdAt,
             updatedAt: link.createdAt,
@@ -216,7 +225,11 @@ export const JoinPage: React.FC = () => {
             {event.name}
           </h1>
           <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">
-            Invited by <span className="font-bold text-slate-700 dark:text-slate-200">{invitationLink.createdByName}</span>
+            Invited by <span className="font-bold text-slate-700 dark:text-slate-200">
+              {invitationLink.createdByName.startsWith('@')
+                ? invitationLink.createdByName
+                : `@${invitationLink.createdByName.toLowerCase().replace(/\s+/g, '_')}`}
+            </span>
           </p>
         </div>
 
@@ -240,7 +253,7 @@ export const JoinPage: React.FC = () => {
           <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Members already joined:</span>
             <span className="font-extrabold text-slate-800 dark:text-slate-200">
-              {Object.keys(event.members || {}).length}
+              {Math.max(Object.keys(event.members || {}).length, invitationLink.membersCount || 0, 1)}
             </span>
           </div>
         </div>
@@ -401,14 +414,14 @@ export const JoinPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Confirm & Join button */}
+            {/* Join Event button */}
             <Button
               variant="primary"
               onClick={handleJoin}
               disabled={joining}
               className="w-full py-3.5 text-base shadow-xl shadow-teal-500/20"
             >
-              {joining ? 'Joining Event...' : 'Confirm & Join Event'}
+              {joining ? 'Joining Event...' : 'Join Event'}
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>

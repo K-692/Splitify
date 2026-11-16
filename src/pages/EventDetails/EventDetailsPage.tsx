@@ -8,13 +8,14 @@ import {
   ExpenseEntry,
   SettlementEntry,
   PaymentConfirmation,
-  DiscrepancyNote,
+  Friendship,
+  FriendRequest,
+  EventMember,
 } from '@/types';
 import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
-import { getFirstName } from '@/utils/name';
 import { formatDisplayExpenseDate } from '@/utils/date';
 import { getEmojiForName } from '@/utils/emoji';
 import { sortItemsChronologicalDesc, sortEntriesChronologicalDesc } from '@/utils/sorting';
@@ -27,7 +28,7 @@ import { ConfirmPaymentReceiptModal } from '@/components/dashboard/ConfirmPaymen
 import { BulkDeleteModal } from '@/components/expenses/BulkDeleteModal';
 import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { SlotsModal } from '@/components/events/SlotsModal';
-import { DiscrepancyNotesModal } from '@/components/expenses/DiscrepancyNotesModal';
+import { ItemInfoModal } from '@/components/expenses/ItemInfoModal';
 import {
   Plus,
   ChevronDown,
@@ -37,7 +38,6 @@ import {
   Users,
   CheckSquare,
   Square,
-  MessageSquare,
   BellRing,
   CheckCircle,
   CheckCircle2,
@@ -51,6 +51,8 @@ import {
   CreditCard,
   Clock,
   Check,
+  Info,
+  UserPlus,
 } from 'lucide-react';
 
 export const EventDetailsPage: React.FC = () => {
@@ -66,14 +68,25 @@ export const EventDetailsPage: React.FC = () => {
   const [paymentConfirmations, setPaymentConfirmations] = useState<PaymentConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Friends & friend request subscriptions
+  const [friends, setFriends] = useState<Friendship[]>([]);
+  const [sentFriendRequests, setSentFriendRequests] = useState<FriendRequest[]>([]);
+
   // Active view tab
   const [activeTab, setActiveTab] = useState<'hierarchy' | 'dashboard' | 'members'>('hierarchy');
 
   // Accordion open states for items (all open by default)
   const [collapsedItems, setCollapsedItems] = useState<Record<string, boolean>>({});
 
-  // Selection state for subitem / expenses (keys are expense IDs)
+  // Selection states for items and expenses
+  const [selectedItemIds, setSelectedItemIds] = useState<Record<string, boolean>>({});
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Record<string, boolean>>({});
+
+  // Item Info Modal
+  const [isItemInfoModalOpen, setIsItemInfoModalOpen] = useState(false);
+  const [activeInfoItem, setActiveInfoItem] = useState<EventItem | ExpenseEntry | null>(null);
+  const [activeInfoCategoryName, setActiveInfoCategoryName] = useState<string | undefined>(undefined);
+  const [activeInfoCategoryEmoji, setActiveInfoCategoryEmoji] = useState<string | undefined>(undefined);
 
   // Inline event rename state
   const [isEditingEventName, setIsEditingEventName] = useState(false);
@@ -106,14 +119,51 @@ export const EventDetailsPage: React.FC = () => {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [activeDiscrepancyTarget, setActiveDiscrepancyTarget] = useState<{
-    type: 'item' | 'expense' | 'settlement';
-    id: string;
-    name: string;
-    notes: DiscrepancyNote[];
-  } | null>(null);
   const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
   const [sendingReminders, setSendingReminders] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubFriends = dataService.subscribeFriends(user.uid, setFriends);
+    const unsubReqs = dataService.subscribeFriendRequests(user.uid, (reqs) => {
+      setSentFriendRequests(reqs.filter((r) => r.fromUid === user.uid && r.status === 'pending'));
+    });
+    return () => {
+      unsubFriends();
+      unsubReqs();
+    };
+  }, [user]);
+
+  const friendUids = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of friends) {
+      if (f.user1Uid === user?.uid) set.add(f.user2Uid);
+      else if (f.user2Uid === user?.uid) set.add(f.user1Uid);
+    }
+    return set;
+  }, [friends, user?.uid]);
+  const pendingSentFriendRequestUids = useMemo(
+    () => new Set(sentFriendRequests.map((r) => r.toUid)),
+    [sentFriendRequests]
+  );
+
+  const handleSendFriendRequest = async (targetMember: EventMember) => {
+    if (!user || targetMember.uid === user.uid) return;
+    try {
+      const toUser = {
+        uid: targetMember.uid,
+        displayName: targetMember.displayName,
+        username: targetMember.username || targetMember.displayName.toLowerCase().replace(/\s+/g, '_'),
+        photoURL: targetMember.photoURL,
+        email: '',
+        createdAt: targetMember.joinedAt || Date.now(),
+      };
+      await dataService.sendFriendRequest(user, toUser);
+      showToast(`Friend request sent to @${toUser.username}`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to send friend request');
+    }
+  };
 
   useEffect(() => {
     if (!eventId) return;
@@ -170,22 +220,29 @@ export const EventDetailsPage: React.FC = () => {
     );
   }, [event, expenses, settlements, user?.uid, items]);
 
-  // Check if all dues are settled among all people for this event
-  const isAllSettled = useMemo(() => {
-    if (!financialOverview) return false;
-    const hasAnyExpenses = expenses.some((e) => !e.deleted) || items.some((i) => !i.deleted);
-    return (
-      hasAnyExpenses &&
-      financialOverview.settlementSuggestions.length === 0 &&
-      Object.values(financialOverview.memberSummaries).every((m) => m.netBalanceMinor === 0)
-    );
-  }, [financialOverview, expenses, items]);
+  const getMemberHandle = (member?: EventMember | null, fallbackUid?: string): string => {
+    if (!member) {
+      if (!fallbackUid) return '@unknown';
+      return fallbackUid.startsWith('@') ? fallbackUid : `@${fallbackUid}`;
+    }
+    if (member.username) {
+      return member.username.startsWith('@') ? member.username : `@${member.username}`;
+    }
+    const cleanName = member.displayName ? member.displayName.toLowerCase().replace(/\s+/g, '_') : 'user';
+    return `@${cleanName}`;
+  };
 
   const getPersonDisplayName = (id: string): string => {
     if (!id || !event) return '';
-    if (event.members[id]) return getFirstName(event.members[id].displayName);
-    if (event.slots?.[id]) return `${event.slots[id].placeholderName} (Pending)`;
-    return 'Unknown';
+    if (event.members[id]) return getMemberHandle(event.members[id]);
+    if (event.slots?.[id]) {
+      const slot = event.slots[id];
+      if (slot.isClaimed && slot.claimedByUid && event.members[slot.claimedByUid]) {
+        return getMemberHandle(event.members[slot.claimedByUid]);
+      }
+      return `${slot.placeholderName} (Pending)`;
+    }
+    return id.startsWith('@') ? id : `@${id}`;
   };
 
   const [isEditCategoryModalOpen, setIsEditCategoryModalOpen] = useState(false);
@@ -211,7 +268,8 @@ export const EventDetailsPage: React.FC = () => {
         editingCategoryItem.id,
         editingCategoryName.trim(),
         editingCategoryEmoji,
-        user
+        user,
+        event.members
       );
       showToast('Category updated');
       setIsEditCategoryModalOpen(false);
@@ -255,14 +313,32 @@ export const EventDetailsPage: React.FC = () => {
     return map;
   }, [items, expensesByItem]);
 
-  // Selected expenses calculations
+  // Selected items & expenses calculations
+  const selectedStandaloneItems = useMemo(() => {
+    return items.filter(
+      (i) => !i.deleted && !i.isSettlementsItem && !i.isCategory && selectedItemIds[i.id]
+    );
+  }, [items, selectedItemIds]);
+
+  const selectedCategoryItems = useMemo(() => {
+    return items.filter(
+      (i) => !i.deleted && !i.isSettlementsItem && i.isCategory && selectedItemIds[i.id]
+    );
+  }, [items, selectedItemIds]);
+
   const selectedExpenses = useMemo(() => {
     return expenses.filter((e) => selectedExpenseIds[e.id] && !e.deleted);
   }, [expenses, selectedExpenseIds]);
 
+  const totalSelectedCount = useMemo(() => {
+    return selectedStandaloneItems.length + selectedCategoryItems.length + selectedExpenses.length;
+  }, [selectedStandaloneItems, selectedCategoryItems, selectedExpenses]);
+
   const selectedTotalMinor = useMemo(() => {
-    return selectedExpenses.reduce((sum, e) => sum + (e.costMinor || 0), 0);
-  }, [selectedExpenses]);
+    const standaloneSum = selectedStandaloneItems.reduce((sum, i) => sum + (i.costMinor || 0), 0);
+    const expenseSum = selectedExpenses.reduce((sum, e) => sum + (e.costMinor || 0), 0);
+    return standaloneSum + expenseSum;
+  }, [selectedStandaloneItems, selectedExpenses]);
 
   // Handlers
   const handleToggleItemCollapse = (itemId: string) => {
@@ -280,49 +356,6 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  const handleAddDiscrepancyNote = async (text: string) => {
-    if (!event || !user || !activeDiscrepancyTarget) return;
-    try {
-      const newNote = await dataService.addDiscrepancyNote(
-        event.id,
-        activeDiscrepancyTarget.type,
-        activeDiscrepancyTarget.id,
-        text,
-        user
-      );
-      setActiveDiscrepancyTarget((prev) =>
-        prev ? { ...prev, notes: [...prev.notes, newNote] } : null
-      );
-      showToast('Discrepancy note added');
-    } catch (err: any) {
-      alert(err.message || 'Failed to add discrepancy note');
-    }
-  };
-
-  const handleDeleteDiscrepancyNote = async (noteId: string) => {
-    if (!event || !user || !activeDiscrepancyTarget) return;
-    try {
-      await dataService.deleteDiscrepancyNote(
-        event.id,
-        activeDiscrepancyTarget.type,
-        activeDiscrepancyTarget.id,
-        noteId,
-        user.uid
-      );
-      setActiveDiscrepancyTarget((prev) =>
-        prev
-          ? {
-              ...prev,
-              notes: prev.notes.filter((n) => n.id !== noteId),
-            }
-          : null
-      );
-      showToast('Discrepancy note removed');
-    } catch (err: any) {
-      alert(err.message || 'Failed to remove note');
-    }
-  };
-
   const handleDeleteSettlement = async (settlement: SettlementEntry) => {
     if (!event || !user) return;
     const fromName = getPersonDisplayName(settlement.payerUid) || settlement.payerName || 'Member';
@@ -334,7 +367,7 @@ export const EventDetailsPage: React.FC = () => {
     )
       return;
     try {
-      await dataService.deleteSettlement(event.id, settlement.id, user, isAllSettled);
+      await dataService.deleteSettlement(event.id, settlement.id, user, event.members);
       showToast('Settlement deleted');
     } catch (err: any) {
       alert(err.message || 'Failed to delete settlement');
@@ -351,7 +384,7 @@ export const EventDetailsPage: React.FC = () => {
     if (!window.confirm(msg)) return;
 
     try {
-      await dataService.deleteItem(event.id, item.id, user, isAllSettled);
+      await dataService.deleteItem(event.id, item.id, user, event.members);
       showToast('Expense item deleted');
     } catch (err: any) {
       alert(err.message || 'Failed to delete item');
@@ -508,25 +541,46 @@ export const EventDetailsPage: React.FC = () => {
   };
 
   const handleToggleSelectAllEvent = () => {
-    const allActive = expenses.filter((e) => !e.deleted);
-    if (selectedExpenses.length === allActive.length) {
+    const activeEventItems = items.filter((i) => !i.deleted && !i.isSettlementsItem);
+    const activeExps = expenses.filter((e) => !e.deleted);
+    const isAllSelected =
+      activeEventItems.length > 0 &&
+      activeEventItems.every((i) => selectedItemIds[i.id]) &&
+      (activeExps.length === 0 || activeExps.every((e) => selectedExpenseIds[e.id]));
+
+    if (isAllSelected) {
+      setSelectedItemIds({});
       setSelectedExpenseIds({});
     } else {
-      const newSel: Record<string, boolean> = {};
-      for (const e of allActive) newSel[e.id] = true;
-      setSelectedExpenseIds(newSel);
+      const newItems: Record<string, boolean> = {};
+      for (const i of activeEventItems) newItems[i.id] = true;
+      const newExps: Record<string, boolean> = {};
+      for (const e of activeExps) newExps[e.id] = true;
+      setSelectedItemIds(newItems);
+      setSelectedExpenseIds(newExps);
     }
   };
 
   const handleToggleSelectItem = (itemId: string) => {
     const itemExps = expensesByItem[itemId] || [];
-    const allSelected = itemExps.every((e) => selectedExpenseIds[e.id]);
+    const isCurrentlySelected = Boolean(selectedItemIds[itemId]);
+    const newState = !isCurrentlySelected;
 
-    const newSel = { ...selectedExpenseIds };
-    for (const e of itemExps) {
-      newSel[e.id] = !allSelected;
-    }
-    setSelectedExpenseIds(newSel);
+    setSelectedItemIds((prev) => ({ ...prev, [itemId]: newState }));
+    setSelectedExpenseIds((prev) => {
+      const updated = { ...prev };
+      for (const e of itemExps) {
+        updated[e.id] = newState;
+      }
+      return updated;
+    });
+  };
+
+  const handleToggleSelectDirectItem = (itemId: string) => {
+    setSelectedItemIds((prev) => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
   };
 
   const handleToggleSelectExpense = (expenseId: string) => {
@@ -540,13 +594,25 @@ export const EventDetailsPage: React.FC = () => {
     if (!event || !user) return;
     setIsBulkDeleting(true);
     try {
-      const ids = selectedExpenses.map((e) => e.id);
-      await dataService.bulkDeleteExpenses(event.id, ids, user, event.members, isAllSettled);
+      const itemIds = [
+        ...selectedStandaloneItems.map((i) => i.id),
+        ...selectedCategoryItems.map((i) => i.id),
+      ];
+      const expIds = selectedExpenses.map((e) => e.id);
+      await dataService.bulkDeleteEventItems(
+        event.id,
+        itemIds,
+        expIds,
+        user,
+        event.members,
+        event.name
+      );
+      setSelectedItemIds({});
       setSelectedExpenseIds({});
       setIsBulkDeleteModalOpen(false);
-      showToast(`Deleted ${ids.length} expense(s)`);
+      showToast(`Deleted ${itemIds.length + expIds.length} item(s)`);
     } catch (err: any) {
-      alert(err.message || 'Failed to delete selected expenses');
+      alert(err.message || 'Failed to delete selected items');
     } finally {
       setIsBulkDeleting(false);
     }
@@ -556,7 +622,7 @@ export const EventDetailsPage: React.FC = () => {
     if (!event || !user) return;
     if (!window.confirm(`Delete expense "${expense.name}"?`)) return;
     try {
-      await dataService.deleteExpense(event.id, expense.id, user, event.members, isAllSettled);
+      await dataService.deleteExpense(event.id, expense.id, user, event.members);
       showToast('Expense deleted');
     } catch (err: any) {
       alert(err.message || 'Failed to delete expense');
@@ -919,7 +985,7 @@ export const EventDetailsPage: React.FC = () => {
               <p className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1">
                 {formatCurrency(financialOverview.totalExpenseMinor, currency)}
               </p>
-              <span className="text-[10px] text-slate-400">Combined items & subitems</span>
+              <span className="text-[10px] text-slate-400">Combined items</span>
             </div>
 
             {/* Your Fair Share */}
@@ -997,7 +1063,7 @@ export const EventDetailsPage: React.FC = () => {
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <span>Balances & Settlements</span>
+          <span>Settlements</span>
           {financialOverview && financialOverview.settlementSuggestions.length > 0 && (
             <span className="w-2 h-2 rounded-full bg-[#F36B2C]" />
           )}
@@ -1010,7 +1076,7 @@ export const EventDetailsPage: React.FC = () => {
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          Members ({Object.keys(event.members).length})
+          People ({Object.keys(event.members).length})
         </button>
       </div>
 
@@ -1045,8 +1111,8 @@ export const EventDetailsPage: React.FC = () => {
             </div>
           )}
 
-          {/* Global Selection Bar if subitems exist */}
-          {expenses.filter((e) => !e.deleted).length > 0 && !normalizedSearchQuery && (
+          {/* Global Selection Bar for All Items and Expenses under the event */}
+          {activeItems.length > 0 && !normalizedSearchQuery && (
             <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-3">
                 <button
@@ -1054,30 +1120,32 @@ export const EventDetailsPage: React.FC = () => {
                   onClick={handleToggleSelectAllEvent}
                   className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-teal-600"
                 >
-                  {selectedExpenses.length > 0 &&
-                  selectedExpenses.length === expenses.filter((e) => !e.deleted).length ? (
+                  {totalSelectedCount > 0 &&
+                  activeItems.every((i) => selectedItemIds[i.id]) &&
+                  (expenses.filter((e) => !e.deleted).length === 0 ||
+                    expenses.filter((e) => !e.deleted).every((e) => selectedExpenseIds[e.id])) ? (
                     <CheckSquare className="w-4 h-4 text-teal-500" />
                   ) : (
                     <Square className="w-4 h-4 text-slate-400" />
                   )}
-                  <span>Select All ({selectedExpenses.length} selected)</span>
+                  <span>Select All ({totalSelectedCount} selected)</span>
                 </button>
 
-                {selectedExpenses.length > 0 && (
+                {totalSelectedCount > 0 && (
                   <span className="text-xs font-extrabold text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-950/60 px-2 py-0.5 rounded-full">
                     Total: {formatCurrency(selectedTotalMinor, currency)}
                   </span>
                 )}
               </div>
 
-              {selectedExpenses.length > 0 && (
+              {totalSelectedCount > 0 && (
                 <Button
                   variant="danger"
                   size="sm"
                   onClick={() => setIsBulkDeleteModalOpen(true)}
                   leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                 >
-                  Delete Selected ({selectedExpenses.length})
+                  Delete Selected ({totalSelectedCount})
                 </Button>
               )}
             </div>
@@ -1144,7 +1212,8 @@ export const EventDetailsPage: React.FC = () => {
                   : rawItemExpenses;
               const itemTotalMinor = itemTotalsMinor[item.id] || 0;
               const allItemExpensesSelected =
-                itemExpenses.length > 0 && itemExpenses.every((e) => selectedExpenseIds[e.id]);
+                Boolean(selectedItemIds[item.id]) ||
+                (itemExpenses.length > 0 && itemExpenses.every((e) => selectedExpenseIds[e.id]));
 
               // ----------------------------------------------------
               // A. CATEGORY ITEM (Contains subitems)
@@ -1170,20 +1239,18 @@ export const EventDetailsPage: React.FC = () => {
                           )}
                         </button>
 
-                        {itemExpenses.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSelectItem(item.id)}
-                            className="text-slate-400 hover:text-teal-600 transition-colors"
-                            title="Select all subitems in this category"
-                          >
-                            {allItemExpensesSelected ? (
-                              <CheckSquare className="w-4 h-4 text-teal-500" />
-                            ) : (
-                              <Square className="w-4 h-4" />
-                            )}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSelectItem(item.id)}
+                          className="text-slate-400 hover:text-teal-600 transition-colors"
+                          title="Select all subitems in this category"
+                        >
+                          {allItemExpensesSelected || selectedItemIds[item.id] ? (
+                            <CheckSquare className="w-4 h-4 text-teal-500" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
 
                         <span className="text-2xl flex-shrink-0">{item.emoji}</span>
 
@@ -1205,8 +1272,8 @@ export const EventDetailsPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <div className="text-right">
+                      <div className="flex items-center gap-2.5 flex-shrink-0">
+                        <div className="text-right mr-1">
                           <span className="text-xs font-bold text-slate-400 dark:text-slate-500 block text-[10px] uppercase">
                             Total
                           </span>
@@ -1230,49 +1297,40 @@ export const EventDetailsPage: React.FC = () => {
                           Add Subitem
                         </Button>
 
-                        {/* Discrepancy Notes */}
+                        {/* Info Button */}
                         <button
                           type="button"
-                          onClick={() =>
-                            setActiveDiscrepancyTarget({
-                              type: 'item',
-                              id: item.id,
-                              name: item.name,
-                              notes: item.discrepancyNotes || [],
-                            })
-                          }
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1"
-                          title="Discrepancy notes"
+                          onClick={() => {
+                            setActiveInfoItem(item);
+                            setActiveInfoCategoryName(undefined);
+                            setActiveInfoCategoryEmoji(undefined);
+                            setIsItemInfoModalOpen(true);
+                          }}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Category info"
                         >
-                          <MessageSquare className="w-4 h-4" />
-                          {(item.discrepancyNotes?.length || 0) > 0 && (
-                            <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
-                              {item.discrepancyNotes!.length}
-                            </span>
-                          )}
+                          <Info className="w-4 h-4" />
                         </button>
 
-                        {user?.uid === item.createdBy && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditCategory(item)}
-                            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            title="Edit Category"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        {/* Edit Category */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditCategory(item)}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Edit Category"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
 
-                        {(user?.uid === item.createdBy || isAllSettled) && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteItem(item)}
-                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
-                            title="Delete Category"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        {/* Delete Category */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteItem(item)}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                          title="Delete Category"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 
@@ -1286,11 +1344,6 @@ export const EventDetailsPage: React.FC = () => {
                         ) : (
                           itemExpenses.map((expense) => {
                             const isSelected = Boolean(selectedExpenseIds[expense.id]);
-                            const isSubitemOwner =
-                              user?.uid === expense.createdBy ||
-                              (!expense.createdBy && user?.uid === expense.paidBy);
-                            const canEditSubitem = isSubitemOwner;
-                            const canDeleteSubitem = isSubitemOwner || isAllSettled;
 
                             return (
                               <div
@@ -1303,19 +1356,17 @@ export const EventDetailsPage: React.FC = () => {
                               >
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                                    {canDeleteSubitem && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleSelectExpense(expense.id)}
-                                        className="text-slate-400 hover:text-teal-600 transition-colors"
-                                      >
-                                        {isSelected ? (
-                                          <CheckSquare className="w-4 h-4 text-teal-500" />
-                                        ) : (
-                                          <Square className="w-4 h-4" />
-                                        )}
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSelectExpense(expense.id)}
+                                      className="text-slate-400 hover:text-teal-600 transition-colors"
+                                    >
+                                      {isSelected ? (
+                                        <CheckSquare className="w-4 h-4 text-teal-500" />
+                                      ) : (
+                                        <Square className="w-4 h-4" />
+                                      )}
+                                    </button>
 
                                     <span className="text-xl flex-shrink-0">{expense.emoji}</span>
 
@@ -1327,7 +1378,7 @@ export const EventDetailsPage: React.FC = () => {
                                         <span>
                                           Paid by{' '}
                                           <strong className="text-slate-700 dark:text-slate-200">
-                                            {getPersonDisplayName(expense.paidBy) || getFirstName(expense.createdByName || 'Unknown')}
+                                            {getPersonDisplayName(expense.paidBy) || (expense.createdByName?.startsWith('@') ? expense.createdByName : `@${(expense.createdByName || 'unknown').toLowerCase().replace(/\s+/g, '_')}`)}
                                           </strong>
                                         </span>
                                         {expense.expenseDate && (
@@ -1349,54 +1400,45 @@ export const EventDetailsPage: React.FC = () => {
                                       {formatCurrency(expense.costMinor, currency)}
                                     </span>
 
-                                    {/* Discrepancy Notes */}
+                                    {/* Info Button */}
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        setActiveDiscrepancyTarget({
-                                          type: 'expense',
-                                          id: expense.id,
-                                          name: expense.name,
-                                          notes: expense.discrepancyNotes || [],
-                                        })
-                                      }
-                                      className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
-                                      title="Discrepancy notes"
+                                      onClick={() => {
+                                        setActiveInfoItem(expense);
+                                        setActiveInfoCategoryName(item.name);
+                                        setActiveInfoCategoryEmoji(item.emoji);
+                                        setIsItemInfoModalOpen(true);
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                      title="Item details"
                                     >
-                                      <MessageSquare className="w-3.5 h-3.5" />
-                                      {(expense.discrepancyNotes?.length || 0) > 0 && (
-                                        <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
-                                          {expense.discrepancyNotes!.length}
-                                        </span>
-                                      )}
+                                      <Info className="w-3.5 h-3.5" />
                                     </button>
 
-                                    {canEditSubitem && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingExpense(expense);
-                                          setEditingItem(null);
-                                          setTargetCategoryItemId(item.id);
-                                          setIsExpenseModalOpen(true);
-                                        }}
-                                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                                        title="Edit Subitem"
-                                      >
-                                        <Edit2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
+                                    {/* Edit Subitem */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingExpense(expense);
+                                        setEditingItem(null);
+                                        setTargetCategoryItemId(item.id);
+                                        setIsExpenseModalOpen(true);
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                                      title="Edit Subitem"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
 
-                                    {canDeleteSubitem && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteSingleExpense(expense)}
-                                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
-                                        title="Delete Subitem"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
+                                    {/* Delete Subitem */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteSingleExpense(expense)}
+                                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
+                                      title="Delete Subitem"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -1436,7 +1478,7 @@ export const EventDetailsPage: React.FC = () => {
                         size="sm"
                         onClick={() => setActiveTab('dashboard')}
                       >
-                        View Balances & Settle
+                        Settle
                       </Button>
                     </div>
 
@@ -1447,13 +1489,8 @@ export const EventDetailsPage: React.FC = () => {
                         </div>
                       ) : (
                         sortEntriesChronologicalDesc(settlements).map((s) => {
-                          const fromName = getFirstName(s.payerName || event.members[s.payerUid]?.displayName || s.payerUid);
-                          const toName = getFirstName(s.receiverName || event.members[s.receiverUid]?.displayName || s.receiverUid);
-                          const canDeleteSettlement =
-                            user?.uid === s.recordedBy ||
-                            user?.uid === s.payerUid ||
-                            user?.uid === s.receiverUid ||
-                            isAllSettled;
+                          const fromName = getPersonDisplayName(s.payerUid) || s.payerName || 'Member';
+                          const toName = getPersonDisplayName(s.receiverUid) || s.receiverName || 'Member';
 
                           return (
                             <div
@@ -1480,35 +1517,12 @@ export const EventDetailsPage: React.FC = () => {
 
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setActiveDiscrepancyTarget({
-                                      type: 'settlement',
-                                      id: s.id,
-                                      name: `Settlement: ${fromName} paid ${toName} (${formatCurrency(s.amountMinor, currency)})`,
-                                      notes: s.discrepancyNotes || [],
-                                    })
-                                  }
-                                  className="p-1 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
-                                  title="Discrepancy notes"
+                                  onClick={() => handleDeleteSettlement(s)}
+                                  className="p-1 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                                  title="Delete settlement"
                                 >
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                  {(s.discrepancyNotes?.length || 0) > 0 && (
-                                    <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
-                                      {s.discrepancyNotes!.length}
-                                    </span>
-                                  )}
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-
-                                {canDeleteSettlement && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSettlement(s)}
-                                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
-                                    title="Delete settlement"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
                               </div>
                             </div>
                           );
@@ -1522,19 +1536,33 @@ export const EventDetailsPage: React.FC = () => {
               // ----------------------------------------------------
               // C. STANDALONE ITEM (Item-First Direct Expense)
               // ----------------------------------------------------
-              const isItemOwner =
-                user?.uid === item.createdBy || (!item.createdBy && user?.uid === item.paidBy);
-              const canEditItem = isItemOwner;
-              const canDeleteItem = isItemOwner || isAllSettled;
+              const isDirectItemSelected = Boolean(selectedItemIds[item.id]);
 
               return (
                 <div
                   key={item.id}
-                  className="bg-white dark:bg-[#15263C] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-4 sm:p-5 transition-all hover:border-teal-500/40"
+                  className={`bg-white dark:bg-[#15263C] rounded-3xl border shadow-sm p-4 sm:p-5 transition-all ${
+                    isDirectItemSelected
+                      ? 'border-teal-500/60 bg-teal-50/20 dark:bg-teal-950/20'
+                      : 'border-slate-200/80 dark:border-slate-800 hover:border-teal-500/40'
+                  }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    {/* Left: Emoji, Name, Payer, Participants */}
-                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                    {/* Left: Checkbox, Emoji, Name, Payer, Participants */}
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelectDirectItem(item.id)}
+                        className="text-slate-400 hover:text-teal-600 transition-colors mt-1 shrink-0"
+                        title="Select this expense"
+                      >
+                        {isDirectItemSelected ? (
+                          <CheckSquare className="w-4 h-4 text-teal-500" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+
                       <span className="text-3xl flex-shrink-0 mt-0.5">{item.emoji}</span>
 
                       <div className="min-w-0 flex-1">
@@ -1551,7 +1579,7 @@ export const EventDetailsPage: React.FC = () => {
                           <span>
                             Paid by{' '}
                             <strong className="text-slate-700 dark:text-slate-200 font-bold">
-                              {getPersonDisplayName(item.paidBy || '') || getFirstName(item.createdByName || 'Unknown')}
+                              {getPersonDisplayName(item.paidBy || '') || (item.createdByName?.startsWith('@') ? item.createdByName : `@${(item.createdByName || 'unknown').toLowerCase().replace(/\s+/g, '_')}`)}
                             </strong>
                           </span>
                           {item.expenseDate && (
@@ -1582,69 +1610,57 @@ export const EventDetailsPage: React.FC = () => {
                         {formatCurrency(item.costMinor || 0, currency)}
                       </span>
 
-                      {/* Discrepancy Notes */}
+                      {/* Info Button */}
                       <button
                         type="button"
-                        onClick={() =>
-                          setActiveDiscrepancyTarget({
-                            type: 'item',
-                            id: item.id,
-                            name: item.name,
-                            notes: item.discrepancyNotes || [],
-                          })
-                        }
-                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
-                        title="Discrepancy notes"
+                        onClick={() => {
+                          setActiveInfoItem(item);
+                          setActiveInfoCategoryName(undefined);
+                          setActiveInfoCategoryEmoji(undefined);
+                          setIsItemInfoModalOpen(true);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Item details"
                       >
-                        <MessageSquare className="w-4 h-4" />
-                        {(item.discrepancyNotes?.length || 0) > 0 && (
-                          <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
-                            {item.discrepancyNotes!.length}
-                          </span>
-                        )}
+                        <Info className="w-4 h-4" />
                       </button>
 
-                      {canEditItem && (
-                        <>
-                          {/* Convert to category button */}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleConvertToCategory(item.id)}
-                            title="Convert to Category so you can add subitems under this expense"
-                            className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5"
-                          >
-                            <FolderPlus className="w-3.5 h-3.5 mr-1" />
-                            Add Subitems
-                          </Button>
+                      {/* Convert to category button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleConvertToCategory(item.id)}
+                        title="Convert to Category so you can add subitems under this expense"
+                        className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 mr-1" />
+                        Add Subitems
+                      </Button>
 
-                          {/* Edit Button */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingItem(item);
-                              setEditingExpense(null);
-                              setTargetCategoryItemId(null);
-                              setIsExpenseModalOpen(true);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                            title="Edit Expense"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
+                      {/* Edit Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingItem(item);
+                          setEditingExpense(null);
+                          setTargetCategoryItemId(null);
+                          setIsExpenseModalOpen(true);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                        title="Edit Expense"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
 
-                      {canDeleteItem && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
-                          title="Delete Expense"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      {/* Delete Expense */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item)}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
+                        title="Delete Expense"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1655,7 +1671,7 @@ export const EventDetailsPage: React.FC = () => {
       )}
 
       {/* ==================================================== */}
-      {/* TAB 2: BALANCES & SETTLEMENTS */}
+      {/* TAB 2: SETTLEMENTS */}
       {/* ==================================================== */}
       {activeTab === 'dashboard' && financialOverview && (
         <div className="space-y-6">
@@ -2034,11 +2050,6 @@ export const EventDetailsPage: React.FC = () => {
                 ).map((s) => {
                   const fromName = getPersonDisplayName(s.payerUid) || s.payerName || 'Member';
                   const toName = getPersonDisplayName(s.receiverUid) || s.receiverName || 'Member';
-                  const canDeleteSettlement =
-                    user?.uid === s.recordedBy ||
-                    user?.uid === s.payerUid ||
-                    user?.uid === s.receiverUid ||
-                    isAllSettled;
 
                   return (
                     <div
@@ -2075,38 +2086,14 @@ export const EventDetailsPage: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Discrepancy Notes */}
                         <button
                           type="button"
-                          onClick={() =>
-                            setActiveDiscrepancyTarget({
-                              type: 'settlement',
-                              id: s.id,
-                              name: `Settlement: ${fromName} paid ${toName} (${formatCurrency(s.amountMinor, currency)})`,
-                              notes: s.discrepancyNotes || [],
-                            })
-                          }
-                          className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors"
-                          title="Discrepancy notes"
+                          onClick={() => handleDeleteSettlement(s)}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                          title="Delete settlement"
                         >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          {(s.discrepancyNotes?.length || 0) > 0 && (
-                            <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-amber-500 text-white leading-tight">
-                              {s.discrepancyNotes!.length}
-                            </span>
-                          )}
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
-
-                        {canDeleteSettlement && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSettlement(s)}
-                            className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
-                            title="Delete settlement"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
                       </div>
                     </div>
                   );
@@ -2118,14 +2105,14 @@ export const EventDetailsPage: React.FC = () => {
       )}
 
       {/* ==================================================== */}
-      {/* TAB 3: MEMBERS & SLOTS */}
+      {/* TAB 3: PEOPLE */}
       {/* ==================================================== */}
       {activeTab === 'members' && (
         <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                Event Members ({Object.keys(event.members).length})
+                People ({Object.keys(event.members).length})
               </h3>
               <p className="text-xs text-slate-400">
                 All friends who have joined this event.
@@ -2155,18 +2142,24 @@ export const EventDetailsPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {Object.values(event.members).map((member) => {
               const assignedSlot = member.slotId && event.slots ? event.slots[member.slotId] : null;
+              const handle = getMemberHandle(member);
 
               return (
                 <div
                   key={member.uid}
                   className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Avatar src={member.photoURL} name={getFirstName(member.displayName)} size="sm" />
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Avatar src={member.photoURL} name={handle} size="sm" />
                     <div className="min-w-0">
                       <span className="text-xs font-extrabold text-slate-800 dark:text-white truncate block">
-                        {getFirstName(member.displayName)} {member.uid === user.uid ? '(You)' : ''}
+                        {handle} {member.uid === user.uid ? '(You)' : ''}
                       </span>
+                      {member.displayName && (
+                        <span className="text-[11px] text-slate-400 truncate block">
+                          {member.displayName}
+                        </span>
+                      )}
                       <span className="text-[10px] text-teal-600 dark:text-teal-400 capitalize font-semibold">
                         {member.role}
                       </span>
@@ -2177,18 +2170,44 @@ export const EventDetailsPage: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {member.uid !== user.uid && (
+                    <div className="shrink-0">
+                      {friendUids.has(member.uid) ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
+                          <Check className="w-3 h-3" />
+                          Friend
+                        </span>
+                      ) : pendingSentFriendRequestUids.has(member.uid) ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md">
+                          <Clock className="w-3 h-3" />
+                          Sent
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleSendFriendRequest(member)}
+                          className="text-[11px] h-7 px-2"
+                          leftIcon={<UserPlus className="w-3 h-3 text-teal-600 dark:text-teal-400" />}
+                        >
+                          Add Friend
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* People & Slots Section */}
+          {/* People Section */}
           <div className="pt-5 border-t border-slate-100 dark:border-slate-800">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h4 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-1.5">
                   <Users className="w-4 h-4 text-amber-500" />
-                  People & Slots ({Object.keys(event.slots || {}).length})
+                  People ({Object.keys(event.slots || {}).length})
                 </h4>
                 <p className="text-[11px] text-slate-400">
                   Individual participant slots and joined people under this event.
@@ -2212,7 +2231,7 @@ export const EventDetailsPage: React.FC = () => {
                   const claimedMember = slot.claimedByUid ? event.members[slot.claimedByUid] : null;
                   const displayName = slot.isClaimed
                     ? claimedMember
-                      ? getFirstName(claimedMember.displayName)
+                      ? getMemberHandle(claimedMember)
                       : slot.claimedByName || slot.placeholderName
                     : slot.placeholderName;
 
@@ -2329,7 +2348,7 @@ export const EventDetailsPage: React.FC = () => {
       <BulkDeleteModal
         isOpen={isBulkDeleteModalOpen}
         onClose={() => setIsBulkDeleteModalOpen(false)}
-        selectedCount={selectedExpenses.length}
+        selectedCount={totalSelectedCount}
         totalAffectedAmountMinor={selectedTotalMinor}
         currency={currency}
         isLoading={isBulkDeleting}
@@ -2465,16 +2484,47 @@ export const EventDetailsPage: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Discrepancy Notes Modal */}
-      {activeDiscrepancyTarget && user && (
-        <DiscrepancyNotesModal
-          isOpen={Boolean(activeDiscrepancyTarget)}
-          onClose={() => setActiveDiscrepancyTarget(null)}
-          entryName={activeDiscrepancyTarget.name}
-          notes={activeDiscrepancyTarget.notes}
+      {/* Item Info Modal ("i" button) */}
+      {event && user && (
+        <ItemInfoModal
+          isOpen={isItemInfoModalOpen}
+          onClose={() => {
+            setIsItemInfoModalOpen(false);
+            setActiveInfoItem(null);
+          }}
+          item={activeInfoItem}
+          categoryName={activeInfoCategoryName}
+          categoryEmoji={activeInfoCategoryEmoji}
+          currency={currency}
           currentUser={user}
-          onAddNote={handleAddDiscrepancyNote}
-          onDeleteNote={handleDeleteDiscrepancyNote}
+          eventMembers={event.members}
+          friendUids={friendUids}
+          pendingSentFriendRequestUids={pendingSentFriendRequestUids}
+          onSendFriendRequest={handleSendFriendRequest}
+          onEdit={() => {
+            if (!activeInfoItem) return;
+            if ('isCategory' in activeInfoItem && activeInfoItem.isCategory) {
+              handleOpenEditCategory(activeInfoItem as EventItem);
+            } else if ('itemId' in activeInfoItem && activeInfoItem.itemId) {
+              setEditingExpense(activeInfoItem as ExpenseEntry);
+              setEditingItem(null);
+              setTargetCategoryItemId(activeInfoItem.itemId);
+              setIsExpenseModalOpen(true);
+            } else {
+              setEditingItem(activeInfoItem as EventItem);
+              setEditingExpense(null);
+              setTargetCategoryItemId(null);
+              setIsExpenseModalOpen(true);
+            }
+          }}
+          onDelete={() => {
+            if (!activeInfoItem) return;
+            if ('itemId' in activeInfoItem && activeInfoItem.itemId) {
+              handleDeleteSingleExpense(activeInfoItem as ExpenseEntry);
+            } else {
+              handleDeleteItem(activeInfoItem as EventItem);
+            }
+          }}
         />
       )}
     </div>

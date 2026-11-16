@@ -4,7 +4,7 @@ import {
   validateAmountShares,
   calculateEventFinancialOverview,
 } from '../src/domain/calculations/finance';
-import { EventMember, ExpenseEntry, SettlementEntry } from '../src/types';
+import { EventMember, ExpenseEntry, SettlementEntry, EventItem } from '../src/types';
 
 describe('Financial Calculations Engine', () => {
   it('should split equally and distribute remainder deterministically', () => {
@@ -306,6 +306,67 @@ describe('Financial Calculations Engine', () => {
         toUid: 'uidB',
         toName: 'B',
         amountMinor: 30000,
+      },
+    ]);
+  });
+
+  it('should resolve claimed slots to member UIDs and handles in financial calculations', () => {
+    const members: Record<string, EventMember> = {
+      uidA: { uid: 'uidA', displayName: 'Krishnendu', username: 'krish', joinedAt: 1, role: 'host' },
+      uidB: { uid: 'uidB', displayName: 'Ayush', username: 'ayush', joinedAt: 2, role: 'member' },
+    };
+
+    const slots = {
+      slot1: {
+        id: 'slot1',
+        eventId: 'event1',
+        placeholderName: 'Slot',
+        isClaimed: true,
+        claimedByUid: 'uidB',
+        claimedByName: 'Ayush',
+        claimedAt: 10,
+        createdAt: 5,
+        updatedAt: 10,
+      },
+    };
+
+    const item: EventItem = {
+      id: 'item1',
+      eventId: 'event1',
+      name: 'Drinks',
+      emoji: '🥤',
+      costMinor: 24000,
+      paidBy: 'uidA',
+      participants: ['uidA', 'slot1'],
+      shares: { uidA: 12000, slot1: 12000 },
+      isCategory: false,
+      createdBy: 'uidA',
+      createdByName: 'Krishnendu',
+      createdAt: 100,
+      updatedAt: 100,
+    };
+
+    const overview = calculateEventFinancialOverview(
+      members,
+      [],
+      [],
+      'uidA',
+      [item],
+      slots
+    );
+
+    expect(overview.totalExpenseMinor).toBe(24000);
+    expect(overview.memberSummaries['uidB'].shareMinor).toBe(12000);
+    expect(overview.memberSummaries['uidB'].netBalanceMinor).toBe(-12000);
+    expect(overview.memberSummaries['uidB'].displayName).toBe('@ayush');
+
+    expect(overview.settlementSuggestions).toEqual([
+      {
+        fromUid: 'uidB',
+        fromName: '@ayush',
+        toUid: 'uidA',
+        toName: '@krish',
+        amountMinor: 12000,
       },
     ]);
   });

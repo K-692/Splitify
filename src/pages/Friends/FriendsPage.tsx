@@ -188,10 +188,10 @@ export const FriendsPage: React.FC = () => {
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-black text-[#203D62] dark:text-white tracking-tight flex items-center gap-2">
-          <span>🤝</span> Friends & Discovery
+          <span>🤝</span> Friends
         </h1>
         <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">
-          Search for friends by their unique Splitify username and manage your friendships & event invitations
+          Search for friends by their unique Splitify username and manage your friendships and event invitations
         </p>
       </div>
 

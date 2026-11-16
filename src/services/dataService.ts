@@ -29,7 +29,6 @@ import {
   EventSlot,
   EventInvitationLink,
   EventMember,
-  DiscrepancyNote,
 } from '@/types';
 import { getEmojiForName } from '@/utils/emoji';
 import { formatAuditTimestamp, getTodayLocalDateString } from '@/utils/date';
@@ -70,11 +69,12 @@ function setLocal<T>(key: string, value: T): void {
   window.dispatchEvent(new CustomEvent('splitify_data_changed', { detail: { key } }));
 }
 
-function isEntryCreatorOrOwner(entry: { createdBy?: string; paidBy?: string } | null | undefined, userUid: string): boolean {
-  if (!entry) return true;
-  if (entry.createdBy) return entry.createdBy === userUid;
-  if (entry.paidBy) return entry.paidBy === userUid;
-  return true;
+function getActorHandle(user: { username?: string; displayName?: string }): string {
+  if (user.username) {
+    return user.username.startsWith('@') ? user.username : `@${user.username}`;
+  }
+  const clean = user.displayName ? user.displayName.toLowerCase().replace(/\s+/g, '_') : 'user';
+  return `@${clean}`;
 }
 
 export const dataService = {
@@ -443,7 +443,7 @@ export const dataService = {
         : (customShares || {});
 
     const now = Date.now();
-    const authorFirstName = getFirstName(user.displayName);
+    const actorHandle = getActorHandle(user);
     const expenseDate = params.expenseDate || getTodayLocalDateString();
     const expenseTime = params.expenseTime || '12:00';
     const parsedOccurred = new Date(`${expenseDate}T${expenseTime}`).getTime();
@@ -465,7 +465,7 @@ export const dataService = {
       occurredAt,
       comment: comment || '',
       createdBy: user.uid,
-      createdByName: authorFirstName,
+      createdByName: actorHandle,
       createdAt: now,
       updatedAt: now,
       deleted: false,
@@ -489,12 +489,12 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_created',
           senderUid: user.uid,
-          senderName: authorFirstName,
+          senderName: actorHandle,
           senderPhotoURL: user.photoURL,
           eventId,
           amountMinor: costMinor,
           title: 'New Expense',
-          description: `${authorFirstName} added "${name}"`,
+          description: `${actorHandle} added "${name}"`,
         });
       }
     }
@@ -502,18 +502,15 @@ export const dataService = {
     return itemId;
   },
 
-  async convertItemToCategory(eventId: string, itemId: string, user: UserProfile): Promise<void> {
+  async convertItemToCategory(eventId: string, itemId: string, user: UserProfile, eventMembers?: Record<string, any>): Promise<void> {
     const now = Date.now();
+    const actorHandle = getActorHandle(user);
 
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx === -1) throw new Error('Item not found');
       const item = items[idx];
-      const isOwner = isEntryCreatorOrOwner(item, user.uid);
-      if (!isOwner) {
-        throw new Error('Only the creator can convert this item.');
-      }
       if (item.isCategory) return;
 
       if (item.costMinor && item.costMinor > 0) {
@@ -530,7 +527,7 @@ export const dataService = {
           shares: item.shares || {},
           comment: item.comment || '',
           createdBy: item.createdBy || user.uid,
-          createdByName: item.createdByName || user.displayName,
+          createdByName: item.createdByName || actorHandle,
           createdAt: item.createdAt || now,
           deleted: false,
         };
@@ -551,6 +548,23 @@ export const dataService = {
         updatedAt: Date.now(),
       };
       setLocal(`items_${eventId}`, items);
+
+      if (eventMembers) {
+        for (const memberUid of Object.keys(eventMembers)) {
+          if (memberUid !== user.uid) {
+            await dataService.createNotification({
+              recipientUid: memberUid,
+              type: 'expense_modified',
+              senderUid: user.uid,
+              senderName: actorHandle,
+              senderPhotoURL: user.photoURL,
+              eventId,
+              title: 'Item Converted',
+              description: `${actorHandle} converted "${item.name}" into a category`,
+            });
+          }
+        }
+      }
       return;
     }
 
@@ -558,10 +572,6 @@ export const dataService = {
     const snap = await getDoc(itemRef);
     if (!snap.exists()) throw new Error('Item not found');
     const existing = snap.data() as EventItem;
-    const isOwner = isEntryCreatorOrOwner(existing, user.uid);
-    if (!isOwner) {
-      throw new Error('Only the creator can convert this item.');
-    }
     if (existing.isCategory) return;
 
     if (existing.costMinor && existing.costMinor > 0) {
@@ -577,7 +587,7 @@ export const dataService = {
         shares: existing.shares || {},
         comment: existing.comment || '',
         createdBy: existing.createdBy || user.uid,
-        createdByName: existing.createdByName || user.displayName,
+        createdByName: existing.createdByName || actorHandle,
         createdAt: existing.createdAt || now,
         deleted: false,
       };
@@ -614,15 +624,9 @@ export const dataService = {
     user: UserProfile,
     eventMembers: Record<string, any>
   ): Promise<void> {
-    const authorFirstName = getFirstName(user.displayName);
+    const actorHandle = getActorHandle(user);
 
     const applyUpdates = (current: EventItem): EventItem => {
-      // Creator ownership check
-      const isOwner = isEntryCreatorOrOwner(current, user.uid);
-      if (!isOwner) {
-        throw new Error('Only the creator can edit this expense item.');
-      }
-
       const name = updates.name !== undefined ? updates.name : current.name;
       const costMinor = updates.costMinor !== undefined ? updates.costMinor : (current.costMinor || 0);
       const paidBy = updates.paidBy !== undefined ? updates.paidBy : (current.paidBy || '');
@@ -662,11 +666,13 @@ export const dataService = {
       };
     };
 
+    let itemName = '';
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx !== -1) {
         items[idx] = applyUpdates(items[idx]);
+        itemName = items[idx].name;
         setLocal(`items_${eventId}`, items);
       }
     } else {
@@ -674,6 +680,7 @@ export const dataService = {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const updated = applyUpdates({ ...snap.data(), id: snap.id } as EventItem);
+        itemName = updated.name;
         const { id, ...docData } = updated;
         await updateDoc(ref, sanitizeForFirestore(docData));
       }
@@ -685,11 +692,11 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_modified',
           senderUid: user.uid,
-          senderName: authorFirstName,
+          senderName: actorHandle,
           senderPhotoURL: user.photoURL,
           eventId,
-          title: 'Expense Modified',
-          description: `${authorFirstName} modified an expense`,
+          title: 'Item Modified',
+          description: `${actorHandle} modified "${itemName || 'an item'}"`,
         });
       }
     }
@@ -700,7 +707,8 @@ export const dataService = {
     itemId: string,
     newName: string,
     customEmoji?: string,
-    user?: UserProfile
+    user?: UserProfile,
+    eventMembers?: Record<string, any>
   ): Promise<void> {
     const emoji = customEmoji || getEmojiForName(newName);
     const now = Date.now();
@@ -709,50 +717,55 @@ export const dataService = {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx !== -1) {
-        const existing = items[idx];
-        if (user && existing.createdBy && existing.createdBy !== user.uid && (!existing.paidBy || existing.paidBy !== user.uid)) {
-          throw new Error('Only the creator can edit this category.');
-        }
         items[idx].name = newName;
         items[idx].emoji = emoji;
         items[idx].updatedAt = now;
         setLocal(`items_${eventId}`, items);
       }
-      return;
+    } else {
+      const itemRef = doc(db, 'events', eventId, 'items', itemId);
+      const updatePayload: any = {
+        name: newName,
+        emoji,
+        updatedAt: now,
+      };
+      await updateDoc(itemRef, sanitizeForFirestore(updatePayload));
     }
 
-    const itemRef = doc(db, 'events', eventId, 'items', itemId);
-    const snap = await getDoc(itemRef);
-    const existing = snap.exists() ? (snap.data() as EventItem) : null;
-    if (user && existing && existing.createdBy && existing.createdBy !== user.uid && (!existing.paidBy || existing.paidBy !== user.uid)) {
-      throw new Error('Only the creator can edit this category.');
+    if (user && eventMembers) {
+      const actorHandle = getActorHandle(user);
+      for (const memberUid of Object.keys(eventMembers)) {
+        if (memberUid !== user.uid) {
+          await dataService.createNotification({
+            recipientUid: memberUid,
+            type: 'expense_modified',
+            senderUid: user.uid,
+            senderName: actorHandle,
+            senderPhotoURL: user.photoURL,
+            eventId,
+            title: 'Category Modified',
+            description: `${actorHandle} modified category "${newName}"`,
+          });
+        }
+      }
     }
-
-    const updatePayload: any = {
-      name: newName,
-      emoji,
-      updatedAt: now,
-    };
-
-    await updateDoc(itemRef, sanitizeForFirestore(updatePayload));
   },
 
   async deleteItem(
     eventId: string,
     itemId: string,
     user: UserProfile,
-    isAllSettled: boolean = false
+    eventMembers?: Record<string, any>
   ): Promise<void> {
+    const actorHandle = getActorHandle(user);
+    let deletedName = 'item';
+
     // Delete item and soft-delete all active subitems inside this item
     if (!isFirebaseConfigured() || !db) {
       const items = getLocal<EventItem[]>(`items_${eventId}`, []);
       const idx = items.findIndex((i) => i.id === itemId);
       if (idx !== -1) {
-        const item = items[idx];
-        const isOwner = isEntryCreatorOrOwner(item, user.uid);
-        if (!isOwner && !isAllSettled) {
-          throw new Error('Only the creator can delete this item until all event dues are settled.');
-        }
+        deletedName = items[idx].name;
         items[idx].deleted = true;
         setLocal(`items_${eventId}`, items);
       }
@@ -767,36 +780,48 @@ export const dataService = {
         }
       }
       setLocal(`expenses_${eventId}`, expenses);
-      return;
+    } else {
+      const itemRef = doc(db, 'events', eventId, 'items', itemId);
+      const itemSnap = await getDoc(itemRef);
+      if (itemSnap.exists()) {
+        deletedName = (itemSnap.data() as EventItem).name || 'item';
+      }
+
+      await updateDoc(itemRef, {
+        deleted: true,
+        updatedAt: Date.now(),
+      });
+
+      // Also mark expenses as deleted
+      const expQ = query(collection(db, 'events', eventId, 'expenses'), where('itemId', '==', itemId));
+      const snaps = await getDocs(expQ);
+      const batch = writeBatch(db);
+      snaps.forEach((d) => {
+        batch.update(d.ref, {
+          deleted: true,
+          deletedAt: Date.now(),
+          deletedBy: user.uid,
+        });
+      });
+      await batch.commit();
     }
 
-    const itemRef = doc(db, 'events', eventId, 'items', itemId);
-    const itemSnap = await getDoc(itemRef);
-    if (itemSnap.exists()) {
-      const item = itemSnap.data() as EventItem;
-      const isOwner = isEntryCreatorOrOwner(item, user.uid);
-      if (!isOwner && !isAllSettled) {
-        throw new Error('Only the creator can delete this item until all event dues are settled.');
+    if (eventMembers) {
+      for (const memberUid of Object.keys(eventMembers)) {
+        if (memberUid !== user.uid) {
+          await dataService.createNotification({
+            recipientUid: memberUid,
+            type: 'expense_deleted',
+            senderUid: user.uid,
+            senderName: actorHandle,
+            senderPhotoURL: user.photoURL,
+            eventId,
+            title: 'Item Deleted',
+            description: `${actorHandle} deleted "${deletedName}"`,
+          });
+        }
       }
     }
-
-    await updateDoc(itemRef, {
-      deleted: true,
-      updatedAt: Date.now(),
-    });
-
-    // Also mark expenses as deleted
-    const expQ = query(collection(db, 'events', eventId, 'expenses'), where('itemId', '==', itemId));
-    const snaps = await getDocs(expQ);
-    const batch = writeBatch(db);
-    snaps.forEach((d) => {
-      batch.update(d.ref, {
-        deleted: true,
-        deletedAt: Date.now(),
-        deletedBy: user.uid,
-      });
-    });
-    await batch.commit();
   },
 
   /**
@@ -906,7 +931,7 @@ export const dataService = {
       : (customShares || {});
 
     const now = Date.now();
-    const authorFirstName = getFirstName(user.displayName);
+    const actorHandle = getActorHandle(user);
     const expenseDate = params.expenseDate || getTodayLocalDateString();
     const expenseTime = params.expenseTime || '12:00';
     const parsedOccurred = new Date(`${expenseDate}T${expenseTime}`).getTime();
@@ -927,7 +952,7 @@ export const dataService = {
       occurredAt,
       comment: comment || '',
       createdBy: user.uid,
-      createdByName: authorFirstName,
+      createdByName: actorHandle,
       createdAt: now,
       deleted: false,
     };
@@ -952,12 +977,12 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_created',
           senderUid: user.uid,
-          senderName: authorFirstName,
+          senderName: actorHandle,
           senderPhotoURL: user.photoURL,
           eventId,
           amountMinor: costMinor,
           title: 'New Expense',
-          description: `${authorFirstName} added "${name}"`,
+          description: `${actorHandle} added "${name}"`,
         });
       }
     }
@@ -983,15 +1008,9 @@ export const dataService = {
     user: UserProfile,
     eventMembers: Record<string, any>
   ): Promise<void> {
-    const authorFirstName = getFirstName(user.displayName);
+    const actorHandle = getActorHandle(user);
 
     const applyUpdatesToEntry = (current: ExpenseEntry): ExpenseEntry => {
-      // Ownership check: only creator can edit
-      const isOwner = isEntryCreatorOrOwner(current, user.uid);
-      if (!isOwner) {
-        throw new Error('Only the creator can edit this subitem.');
-      }
-
       const name = updates.name !== undefined ? updates.name : current.name;
       const costMinor = updates.costMinor !== undefined ? updates.costMinor : current.costMinor;
       const paidBy = updates.paidBy !== undefined ? updates.paidBy : current.paidBy;
@@ -1029,11 +1048,13 @@ export const dataService = {
       };
     };
 
+    let updatedName = '';
     if (!isFirebaseConfigured() || !db) {
       const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
       const idx = expenses.findIndex((e) => e.id === expenseId);
       if (idx !== -1) {
         expenses[idx] = applyUpdatesToEntry(expenses[idx]);
+        updatedName = expenses[idx].name;
         setLocal(`expenses_${eventId}`, expenses);
       }
     } else {
@@ -1041,6 +1062,7 @@ export const dataService = {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const updated = applyUpdatesToEntry({ ...snap.data(), id: snap.id } as ExpenseEntry);
+        updatedName = updated.name;
         const { id, ...docData } = updated;
         await updateDoc(ref, sanitizeForFirestore(docData));
       }
@@ -1053,11 +1075,11 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_modified',
           senderUid: user.uid,
-          senderName: authorFirstName,
+          senderName: actorHandle,
           senderPhotoURL: user.photoURL,
           eventId,
-          title: 'Expense Modified',
-          description: `${authorFirstName} modified an expense`,
+          title: 'Item Modified',
+          description: `${actorHandle} modified "${updatedName || 'an expense'}"`,
         });
       }
     }
@@ -1067,20 +1089,17 @@ export const dataService = {
     eventId: string,
     expenseId: string,
     user: UserProfile,
-    eventMembers: Record<string, any>,
-    isAllSettled: boolean = false
+    eventMembers: Record<string, any>
   ): Promise<void> {
     const now = Date.now();
+    const actorHandle = getActorHandle(user);
+    let deletedName = 'an expense';
 
     if (!isFirebaseConfigured() || !db) {
       const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
       const idx = expenses.findIndex((e) => e.id === expenseId);
       if (idx !== -1) {
-        const current = expenses[idx];
-        const isOwner = isEntryCreatorOrOwner(current, user.uid);
-        if (!isOwner && !isAllSettled) {
-          throw new Error('Only the creator can delete this subitem until all event dues are settled.');
-        }
+        deletedName = expenses[idx].name;
         expenses[idx].deleted = true;
         expenses[idx].deletedAt = now;
         expenses[idx].deletedBy = user.uid;
@@ -1090,11 +1109,7 @@ export const dataService = {
       const ref = doc(db, 'events', eventId, 'expenses', expenseId);
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const current = snap.data() as ExpenseEntry;
-        const isOwner = isEntryCreatorOrOwner(current, user.uid);
-        if (!isOwner && !isAllSettled) {
-          throw new Error('Only the creator can delete this subitem until all event dues are settled.');
-        }
+        deletedName = (snap.data() as ExpenseEntry).name || 'an expense';
         await updateDoc(ref, {
           deleted: true,
           deletedAt: now,
@@ -1110,11 +1125,11 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_deleted',
           senderUid: user.uid,
-          senderName: user.displayName,
+          senderName: actorHandle,
           senderPhotoURL: user.photoURL,
           eventId,
-          title: 'Expense Deleted',
-          description: `${user.displayName} deleted an expense`,
+          title: 'Item Deleted',
+          description: `${actorHandle} deleted "${deletedName}"`,
         });
       }
     }
@@ -1124,23 +1139,13 @@ export const dataService = {
     eventId: string,
     expenseIds: string[],
     user: UserProfile,
-    eventMembers: Record<string, any>,
-    isAllSettled: boolean = false
+    eventMembers: Record<string, any>
   ): Promise<void> {
     const now = Date.now();
+    const actorHandle = getActorHandle(user);
 
     if (!isFirebaseConfigured() || !db) {
       const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
-      if (!isAllSettled) {
-        for (const exp of expenses) {
-          if (expenseIds.includes(exp.id)) {
-            const isOwner = isEntryCreatorOrOwner(exp, user.uid);
-            if (!isOwner) {
-              throw new Error('You can only delete your own expenses until all event dues are settled.');
-            }
-          }
-        }
-      }
       for (const exp of expenses) {
         if (expenseIds.includes(exp.id)) {
           exp.deleted = true;
@@ -1150,18 +1155,6 @@ export const dataService = {
       }
       setLocal(`expenses_${eventId}`, expenses);
     } else {
-      if (!isAllSettled) {
-        for (const id of expenseIds) {
-          const snap = await getDoc(doc(db, 'events', eventId, 'expenses', id));
-          if (snap.exists()) {
-            const exp = snap.data() as ExpenseEntry;
-            const isOwner = isEntryCreatorOrOwner(exp, user.uid);
-            if (!isOwner) {
-              throw new Error('You can only delete your own expenses until all event dues are settled.');
-            }
-          }
-        }
-      }
       const batch = writeBatch(db);
       for (const id of expenseIds) {
         const ref = doc(db, 'events', eventId, 'expenses', id);
@@ -1180,11 +1173,92 @@ export const dataService = {
           recipientUid: memberUid,
           type: 'expense_deleted',
           senderUid: user.uid,
-          senderName: user.displayName,
+          senderName: actorHandle,
           senderPhotoURL: user.photoURL,
           eventId,
-          title: 'Expenses Deleted',
-          description: `${user.displayName} deleted ${expenseIds.length} expense(s)`,
+          title: 'Items Deleted',
+          description: `${actorHandle} deleted ${expenseIds.length} expense(s)`,
+        });
+      }
+    }
+  },
+
+  async bulkDeleteEventItems(
+    eventId: string,
+    itemIds: string[],
+    expenseIds: string[],
+    user: UserProfile,
+    eventMembers: Record<string, any>,
+    eventName?: string
+  ): Promise<void> {
+    const now = Date.now();
+    const actorHandle = getActorHandle(user);
+
+    if (!isFirebaseConfigured() || !db) {
+      if (itemIds.length > 0) {
+        const items = getLocal<EventItem[]>(`items_${eventId}`, []);
+        for (const item of items) {
+          if (itemIds.includes(item.id)) {
+            item.deleted = true;
+            item.updatedAt = now;
+          }
+        }
+        setLocal(`items_${eventId}`, items);
+      }
+
+      const expenses = getLocal<ExpenseEntry[]>(`expenses_${eventId}`, []);
+      for (const exp of expenses) {
+        if (expenseIds.includes(exp.id) || (exp.itemId && itemIds.includes(exp.itemId))) {
+          exp.deleted = true;
+          exp.deletedAt = now;
+          exp.deletedBy = user.uid;
+        }
+      }
+      setLocal(`expenses_${eventId}`, expenses);
+    } else {
+      const batch = writeBatch(db);
+      for (const id of itemIds) {
+        batch.update(doc(db, 'events', eventId, 'items', id), {
+          deleted: true,
+          updatedAt: now,
+        });
+      }
+      for (const id of expenseIds) {
+        batch.update(doc(db, 'events', eventId, 'expenses', id), {
+          deleted: true,
+          deletedAt: now,
+          deletedBy: user.uid,
+        });
+      }
+
+      if (itemIds.length > 0) {
+        for (const itemId of itemIds) {
+          const expQ = query(collection(db, 'events', eventId, 'expenses'), where('itemId', '==', itemId));
+          const snaps = await getDocs(expQ);
+          snaps.forEach((d) => {
+            batch.update(d.ref, {
+              deleted: true,
+              deletedAt: now,
+              deletedBy: user.uid,
+            });
+          });
+        }
+      }
+      await batch.commit();
+    }
+
+    const totalCount = itemIds.length + expenseIds.length;
+    for (const memberUid of Object.keys(eventMembers || {})) {
+      if (memberUid !== user.uid) {
+        await dataService.createNotification({
+          recipientUid: memberUid,
+          type: 'expense_deleted',
+          senderUid: user.uid,
+          senderName: actorHandle,
+          senderPhotoURL: user.photoURL,
+          eventId,
+          title: 'Items Deleted',
+          description: `${actorHandle} deleted ${totalCount} item(s) in "${eventName || 'the event'}"`,
         });
       }
     }
@@ -1194,114 +1268,38 @@ export const dataService = {
     eventId: string,
     settlementId: string,
     user: UserProfile,
-    isAllSettled: boolean = false
+    eventMembers?: Record<string, any>
   ): Promise<void> {
+    const actorHandle = getActorHandle(user);
+
     if (!isFirebaseConfigured() || !db) {
       const settlements = getLocal<SettlementEntry[]>(`settlements_${eventId}`, []);
       const idx = settlements.findIndex((s) => s.id === settlementId);
       if (idx === -1) throw new Error('Settlement not found');
-      const s = settlements[idx];
-      const isOwner = user.uid === s.recordedBy || user.uid === s.payerUid || user.uid === s.receiverUid;
-      if (!isOwner && !isAllSettled) {
-        throw new Error('Only the parties involved can delete this settlement until all event dues are settled.');
-      }
       settlements.splice(idx, 1);
       setLocal(`settlements_${eventId}`, settlements);
-      return;
+    } else {
+      const ref = doc(db, 'events', eventId, 'settlements', settlementId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) throw new Error('Settlement not found');
+      await deleteDoc(ref);
     }
 
-    const ref = doc(db, 'events', eventId, 'settlements', settlementId);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) throw new Error('Settlement not found');
-    const s = snap.data() as SettlementEntry;
-    const isOwner = user.uid === s.recordedBy || user.uid === s.payerUid || user.uid === s.receiverUid;
-    if (!isOwner && !isAllSettled) {
-      throw new Error('Only the parties involved can delete this settlement until all event dues are settled.');
-    }
-    await deleteDoc(ref);
-  },
-
-  async addDiscrepancyNote(
-    eventId: string,
-    targetType: 'item' | 'expense' | 'settlement',
-    targetId: string,
-    text: string,
-    user: UserProfile
-  ): Promise<DiscrepancyNote> {
-    const now = Date.now();
-    const newNote: DiscrepancyNote = {
-      id: 'note_' + now + '_' + Math.random().toString(36).substring(2, 7),
-      authorUid: user.uid,
-      authorName: getFirstName(user.displayName),
-      authorPhotoURL: user.photoURL,
-      text: text.trim(),
-      createdAt: now,
-    };
-
-    if (!isFirebaseConfigured() || !db) {
-      const collectionKey =
-        targetType === 'item'
-          ? `items_${eventId}`
-          : targetType === 'expense'
-          ? `expenses_${eventId}`
-          : `settlements_${eventId}`;
-      const list = getLocal<any[]>(collectionKey, []);
-      const idx = list.findIndex((e) => e.id === targetId);
-      if (idx !== -1) {
-        list[idx].discrepancyNotes = [...(list[idx].discrepancyNotes || []), newNote];
-        setLocal(collectionKey, list);
+    if (eventMembers) {
+      for (const memberUid of Object.keys(eventMembers)) {
+        if (memberUid !== user.uid) {
+          await dataService.createNotification({
+            recipientUid: memberUid,
+            type: 'expense_deleted',
+            senderUid: user.uid,
+            senderName: actorHandle,
+            senderPhotoURL: user.photoURL,
+            eventId,
+            title: 'Settlement Deleted',
+            description: `${actorHandle} deleted a settlement`,
+          });
+        }
       }
-      return newNote;
-    }
-
-    const collectionName =
-      targetType === 'item' ? 'items' : targetType === 'expense' ? 'expenses' : 'settlements';
-    const ref = doc(db, 'events', eventId, collectionName, targetId);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const existingNotes = (snap.data().discrepancyNotes || []) as DiscrepancyNote[];
-      await updateDoc(ref, {
-        discrepancyNotes: [...existingNotes, newNote],
-      });
-    }
-    return newNote;
-  },
-
-  async deleteDiscrepancyNote(
-    eventId: string,
-    targetType: 'item' | 'expense' | 'settlement',
-    targetId: string,
-    noteId: string,
-    userUid: string
-  ): Promise<void> {
-    if (!isFirebaseConfigured() || !db) {
-      const collectionKey =
-        targetType === 'item'
-          ? `items_${eventId}`
-          : targetType === 'expense'
-          ? `expenses_${eventId}`
-          : `settlements_${eventId}`;
-      const list = getLocal<any[]>(collectionKey, []);
-      const idx = list.findIndex((e) => e.id === targetId);
-      if (idx !== -1) {
-        list[idx].discrepancyNotes = (list[idx].discrepancyNotes || []).filter(
-          (n: DiscrepancyNote) => !(n.id === noteId && n.authorUid === userUid)
-        );
-        setLocal(collectionKey, list);
-      }
-      return;
-    }
-
-    const collectionName =
-      targetType === 'item' ? 'items' : targetType === 'expense' ? 'expenses' : 'settlements';
-    const ref = doc(db, 'events', eventId, collectionName, targetId);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const existingNotes = (snap.data().discrepancyNotes || []) as DiscrepancyNote[];
-      const filtered = existingNotes.filter((n) => !(n.id === noteId && n.authorUid === userUid));
-      await updateDoc(ref, {
-        discrepancyNotes: filtered,
-      });
     }
   },
 
@@ -2363,7 +2361,8 @@ export const dataService = {
     if (!event) throw new Error('Event not found');
 
     const token = generateInvitationToken();
-    const authorFirstName = getFirstName(user.displayName);
+    const actorHandle = user.username ? `@${user.username}` : `@${getFirstName(user.displayName).toLowerCase()}`;
+    const membersCount = Object.keys(event.members || {}).length;
     const availableSlots = Object.values(event.slots || {})
       .filter((s) => !s.isClaimed)
       .map((s) => ({ id: s.id, placeholderName: s.placeholderName }));
@@ -2374,13 +2373,14 @@ export const dataService = {
       eventName: event.name,
       eventEmoji: event.emoji,
       createdByUid: user.uid,
-      createdByName: authorFirstName,
+      createdByName: actorHandle,
       createdAt: Date.now(),
       scope: options?.scope || 'full',
       allowedItemIds: options?.allowedItemIds || [],
       availableSlots,
       revoked: false,
       usesCount: 0,
+      membersCount,
       maxUses: options?.maxUses,
       expiresAt: options?.expiresAt,
     };
@@ -2509,6 +2509,7 @@ export const dataService = {
       const lIdx = links.findIndex((l) => l.id === link.id);
       if (lIdx !== -1) {
         links[lIdx].usesCount = (links[lIdx].usesCount || 0) + 1;
+        links[lIdx].membersCount = Object.keys(event.members).length;
         setLocal('invitation_links', links);
       }
 
@@ -2608,8 +2609,10 @@ export const dataService = {
       );
 
       if (!isAlreadyMember) {
+        const updatedMembersCount = Object.keys(liveEvent.members || {}).length + 1;
         transaction.update(linkRef, {
           usesCount: (liveLink.usesCount || 0) + 1,
+          membersCount: updatedMembersCount,
         });
       }
 
@@ -3043,10 +3046,16 @@ export const dataService = {
   // NOTIFICATIONS
   // ==========================================
   subscribeNotifications(userId: string, callback: (notifications: AppNotification[]) => void): () => void {
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
     if (!isFirebaseConfigured() || !db) {
       const load = () => {
         const all = getLocal<AppNotification[]>(`notifications_${userId}`, []);
-        callback(all.sort((a, b) => b.createdAt - a.createdAt));
+        const active = all.filter((n) => Date.now() - n.createdAt < THIRTY_DAYS_MS);
+        if (active.length !== all.length) {
+          setLocal(`notifications_${userId}`, active);
+        }
+        callback(active.sort((a, b) => b.createdAt - a.createdAt));
       };
       load();
       const handler = () => load();
@@ -3060,11 +3069,49 @@ export const dataService = {
     );
     return onSnapshot(q, (snapshot) => {
       const notifs: AppNotification[] = [];
+      const expiredIds: string[] = [];
+      const currentNow = Date.now();
       snapshot.forEach((d) => {
-        notifs.push({ ...d.data(), id: d.id } as AppNotification);
+        const item = { ...d.data(), id: d.id } as AppNotification;
+        if (currentNow - item.createdAt < THIRTY_DAYS_MS) {
+          notifs.push(item);
+        } else {
+          expiredIds.push(d.id);
+        }
       });
       callback(notifs);
+
+      if (expiredIds.length > 0 && db) {
+        const batch = writeBatch(db);
+        expiredIds.forEach((id) => {
+          batch.delete(doc(db!, 'users', userId, 'notifications', id));
+        });
+        batch.commit().catch(() => {});
+      }
     });
+  },
+
+  async purgeOldNotifications(userId: string): Promise<void> {
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    if (!isFirebaseConfigured() || !db) {
+      const all = getLocal<AppNotification[]>(`notifications_${userId}`, []);
+      const active = all.filter((n) => now - n.createdAt < THIRTY_DAYS_MS);
+      setLocal(`notifications_${userId}`, active);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'users', userId, 'notifications'),
+      where('createdAt', '<', now - THIRTY_DAYS_MS)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
   },
 
   async createNotification(params: Omit<AppNotification, 'id' | 'read' | 'createdAt'>): Promise<void> {

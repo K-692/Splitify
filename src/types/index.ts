@@ -78,6 +78,7 @@ export interface EventInvitationLink {
   maxUses?: number;
   usesCount: number;
   expiresAt?: number;
+  membersCount?: number;
 }
 
 export interface SplitifyEvent {
@@ -108,15 +109,6 @@ export interface EventInvitation {
   createdAt: number;
   scope?: 'full' | 'selected_items';
   allowedItemIds?: string[];
-}
-
-export interface DiscrepancyNote {
-  id: string;
-  authorUid: string;
-  authorName: string;
-  authorPhotoURL?: string;
-  text: string;
-  createdAt: number;
 }
 
 /**
@@ -153,7 +145,6 @@ export interface EventItem {
   lastModifiedBy?: string;
   lastModifiedByName?: string;
   lastModifiedAt?: number;
-  discrepancyNotes?: DiscrepancyNote[];
 }
 
 export interface ExpenseEntry {
@@ -180,7 +171,6 @@ export interface ExpenseEntry {
   deleted?: boolean;
   deletedAt?: number;
   deletedBy?: string;
-  discrepancyNotes?: DiscrepancyNote[];
 }
 
 export type PaymentStatus = 'awaiting_confirmation' | 'completed' | 'rejected';
@@ -232,7 +222,6 @@ export interface SettlementEntry {
   confirmedByUid?: string;
   status: 'completed' | 'reversed';
   note?: string;
-  discrepancyNotes?: DiscrepancyNote[];
 }
 
 export type NotificationType =

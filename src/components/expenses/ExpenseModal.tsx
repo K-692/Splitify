@@ -498,7 +498,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 <span className="absolute left-3 text-lg select-none">{categoryEmoji}</span>
                 <input
                   type="text"
-                  placeholder="e.g. Food & Drinks, Hotel Stay, Flight & Transit"
+                  placeholder="e.g. Food, Drinks, Hotel Stay, Flight, Transit"
                   value={categoryName}
                   onChange={(e) => handleCategoryNameChange(e.target.value)}
                   required
@@ -589,7 +589,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                   <span className="absolute left-3 text-lg select-none">{emoji}</span>
                   <input
                     type="text"
-                    placeholder={hasSubitems ? 'e.g. Pizza & Drinks, Hotel Night 1' : 'e.g. Flight Tickets, Dinner, Hotel'}
+                    placeholder={hasSubitems ? 'e.g. Pizza, Drinks, Hotel Night 1' : 'e.g. Flight Tickets, Dinner, Hotel'}
                     value={name}
                     onChange={(e) => handleNameChange(e.target.value)}
                     required
@@ -893,7 +893,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                       Cancel
                     </Button>
                     <Button type="submit" variant="primary" size="md" isLoading={isSubmitting}>
-                      Save Category & Subitems
+                      Save Category
                     </Button>
                   </div>
                 </>

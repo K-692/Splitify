@@ -115,7 +115,7 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
         {/* People / Slots List */}
         <div className="space-y-2 pt-2">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
-            Expected & Joined ({slotsList.length})
+            People ({slotsList.length})
           </span>
 
           {slotsList.length === 0 ? (

@@ -236,6 +236,23 @@ export function calculateEventFinancialOverview(
 
   const completedSettlements = settlements.filter((s) => s.status === 'completed');
 
+  // Helper to resolve slot ID to claimed member UID if the slot has been claimed
+  const resolveUid = (rawUid: string): string => {
+    if (!rawUid) return rawUid;
+    if (slots && slots[rawUid]?.isClaimed && slots[rawUid]?.claimedByUid) {
+      return slots[rawUid].claimedByUid!;
+    }
+    return rawUid;
+  };
+
+  const getHandleOrName = (m?: EventMember | null, fallback?: string): string => {
+    if (!m) return fallback || 'Member';
+    if (m.username) {
+      return m.username.startsWith('@') ? m.username : `@${m.username}`;
+    }
+    return m.displayName || fallback || 'Member';
+  };
+
   // Total ordinary expense
   const totalExpenseMinor = unifiedExpenses.reduce((sum, e) => sum + (e.costMinor || 0), 0);
 
@@ -244,7 +261,7 @@ export function calculateEventFinancialOverview(
   for (const [uid, member] of Object.entries(members)) {
     memberSummaries[uid] = {
       uid,
-      displayName: member.displayName || 'Unknown Member',
+      displayName: getHandleOrName(member),
       photoURL: member.photoURL,
       username: member.username,
       spentMinor: 0,
@@ -292,13 +309,15 @@ export function calculateEventFinancialOverview(
 
   // 2. Accumulate ordinary expenses
   for (const exp of unifiedExpenses) {
-    if (exp.paidBy) {
-      ensureMember(exp.paidBy, exp.payerName);
-      memberSummaries[exp.paidBy].spentMinor += exp.costMinor || 0;
+    const paidBy = resolveUid(exp.paidBy);
+    if (paidBy) {
+      ensureMember(paidBy, exp.payerName);
+      memberSummaries[paidBy].spentMinor += exp.costMinor || 0;
     }
 
     if (exp.shares) {
-      for (const [uid, share] of Object.entries(exp.shares)) {
+      for (const [rawUid, share] of Object.entries(exp.shares)) {
+        const uid = resolveUid(rawUid);
         ensureMember(uid);
         memberSummaries[uid].shareMinor += share || 0;
       }
@@ -307,11 +326,13 @@ export function calculateEventFinancialOverview(
 
   // 3. Accumulate settlements
   for (const set of completedSettlements) {
-    ensureMember(set.payerUid, set.payerName);
-    ensureMember(set.receiverUid, set.receiverName);
+    const payer = resolveUid(set.payerUid);
+    const receiver = resolveUid(set.receiverUid);
+    ensureMember(payer, set.payerName);
+    ensureMember(receiver, set.receiverName);
 
-    memberSummaries[set.payerUid].settledPaidMinor += set.amountMinor || 0;
-    memberSummaries[set.receiverUid].settledReceivedMinor += set.amountMinor || 0;
+    memberSummaries[payer].settledPaidMinor += set.amountMinor || 0;
+    memberSummaries[receiver].settledReceivedMinor += set.amountMinor || 0;
   }
 
   // 4. Calculate Net Balances:

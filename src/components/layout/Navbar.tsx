@@ -137,7 +137,7 @@ export const Navbar: React.FC = () => {
                     className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   >
                     <User className="w-4 h-4 text-slate-400" />
-                    Profile & Settings
+                    Profile
                   </Link>
 
                   <div className="border-t border-slate-100 dark:border-slate-800/80 my-1" />

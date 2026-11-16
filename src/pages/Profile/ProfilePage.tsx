@@ -79,7 +79,7 @@ export const ProfilePage: React.FC = () => {
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-black text-[#203D62] dark:text-white tracking-tight flex items-center gap-2">
-          <span>👤</span> Profile & Settings
+          <span>👤</span> Profile
         </h1>
         <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">
           Manage your Splitify profile, display preferences, and account
@@ -136,7 +136,7 @@ export const ProfilePage: React.FC = () => {
       <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 space-y-4">
         <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
           <Palette className="w-4 h-4 text-teal-500" />
-          Appearance & Preferences
+          Preferences
         </h3>
 
         {/* Theme switcher */}

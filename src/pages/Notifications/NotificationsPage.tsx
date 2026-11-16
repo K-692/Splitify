@@ -87,10 +87,10 @@ export const NotificationsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#203D62] dark:text-white tracking-tight flex items-center gap-2">
-            <span>🔔</span> Notifications & Activity
+            <span>🔔</span> Notifications
           </h1>
           <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">
-            Real-time alerts, payment reminders, event invitations & friendship updates
+            Real-time alerts, payment reminders, event invitations, and friendship updates
           </p>
         </div>
 
@@ -151,7 +151,7 @@ export const NotificationsPage: React.FC = () => {
                     onClick={() => handleRespondInvitation(inv, true)}
                     leftIcon={<Check className="w-3.5 h-3.5" />}
                   >
-                    Accept & Join
+                    Accept
                   </Button>
                   <Button
                     size="sm"
