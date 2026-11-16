@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAj7AHMZrfiCp7PBfZYQ9bZF1UEPtgq0AM',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'splitify-151bd.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'splitify-151bd',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'splitify-151bd.firebasestorage.app',
