@@ -35,6 +35,7 @@ import { BulkDeleteModal } from '@/components/expenses/BulkDeleteModal';
 import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { SlotsModal } from '@/components/events/SlotsModal';
 import { ItemInfoModal } from '@/components/expenses/ItemInfoModal';
+import { FriendRequestActions } from '@/components/friends/FriendRequestActions';
 import {
   Plus,
   ChevronDown,
@@ -77,6 +78,7 @@ export const EventDetailsPage: React.FC = () => {
   // Friends & friend request subscriptions
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [sentFriendRequests, setSentFriendRequests] = useState<FriendRequest[]>([]);
+  const [receivedFriendRequests, setReceivedFriendRequests] = useState<FriendRequest[]>([]);
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<'hierarchy' | 'dashboard' | 'members'>('hierarchy');
@@ -140,8 +142,9 @@ export const EventDetailsPage: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     const unsubFriends = dataService.subscribeFriends(user.uid, setFriends);
-    const unsubReqs = dataService.subscribeFriendRequests(user.uid, (reqs) => {
-      setSentFriendRequests(reqs.filter((r) => r.fromUid === user.uid && r.status === 'pending'));
+    const unsubReqs = dataService.subscribeFriendRequests(user.uid, (received, sent) => {
+      setReceivedFriendRequests(received);
+      setSentFriendRequests(sent);
     });
     return () => {
       unsubFriends();
@@ -2231,10 +2234,15 @@ export const EventDetailsPage: React.FC = () => {
                           <Check className="w-3 h-3" />
                           Friend
                         </span>
+                      ) : receivedFriendRequests.some((r) => r.fromUid === member.uid) ? (
+                        <FriendRequestActions
+                          requestId={receivedFriendRequests.find((r) => r.fromUid === member.uid)!.id}
+                          size="sm"
+                        />
                       ) : (pendingSentFriendRequestUids.has(member.uid) || isFriendRequestOnCooldown(member.uid)) ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/40">
                           <Clock className="w-3 h-3" />
-                          Request sent
+                          Request Sent
                         </span>
                       ) : (
                         <Button

@@ -115,17 +115,21 @@ Splitify adopts an **Item-First architecture** designed for speed, flexibility, 
 - **Unified Chronological Hierarchy:** Standalone items, category subitems, categories (dynamically sorted by their latest active child occurrence), settlements, and pending confirmations are ordered chronologically (newest first).
 - **Consistent Everywhere:** Chronological descending order is strictly maintained in the expense hierarchy, search results, and plain-text export reports.
 
-### 13. 🤝 Friends, Event Invitations & Universal Friend Request Actions
-- **Universal Friend Request Actions:** Reusable `Accept` and `Decline` controls available everywhere an incoming request is displayed: Friends tab (Received Requests), search results (if an incoming request exists), and the Notifications inbox.
+### 13. 🤝 Friends, Atomic Connections & Friend Request Lifecycle
+- **Deterministic Friendship Identity:** All friendships are mapped to deterministic document IDs based on sorted participant UIDs (`friendships/{user1Uid}_{user2Uid}`). Both users resolve to the exact same document ID regardless of who sent or accepted the request, eliminating duplicate connections.
+- **Atomic Acceptance via Firestore Transactions:** Accepting a friend request executes an atomic Firestore transaction that verifies recipient authorization, transitions request status to `accepted`, and establishes the friendship document simultaneously.
+- **Bi-Directional Reverse & Duplicate Request Prevention:** Prevents creating duplicate requests in both directions. If user A sends a request to user B, user B's search directly surfaces `Accept` and `Decline` controls instead of an invalid second request.
+- **Universal Friend Request Actions:** Reusable `Accept` and `Decline` controls available everywhere an incoming request is displayed: Friends tab (Received Requests), search results (if an incoming request exists), in-event member cards, and the Notifications inbox.
 - **Dedicated Event Invitations Section:** The Friends page features 3 dedicated tabs:
-  1. *My Friends* (with direct event invitation modal).
+  1. *My Friends* (with direct user profile display, friend count, and remove friend action).
   2. *Friend Requests* (Received and Sent requests with real-time badges).
   3. *Event Invitations* (real-time invitations from friends to join events with event emoji, name, inviter handle `@handle`, date/time, and one-click Accept/Decline actions).
 - **Search Users by Handle:** Real-time lookup with atomic Firestore security rules and profile caching.
+- **Safe Recovery & Repair Mechanism:** Automatic recovery mechanism detects any previously accepted requests that missed friendship creation and safely establishes missing connections.
 - **30-Day Auto-Purge:** Notifications and activities older than 30 days are automatically pruned in the background, keeping user inboxes responsive and clutter-free.
 - **Streamlined UI Text:** All sections, titles, and tabs use the single most relevant name (e.g. *Settlements*, *Profile*, *People*, *Friends*, *Notifications*), keeping the interface clean and concise.
 
-### 10. 🎨 Brand Identity, Mobile Responsiveness & Polished UI/UX
+### 14. 🎨 Brand Identity, Mobile Responsiveness & Polished UI/UX
 - Official palette derived from the Splitify logo:
   - Deep Navy: `#203D62`
   - Teal Green: `#16AA88`

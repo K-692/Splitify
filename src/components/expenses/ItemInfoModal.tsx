@@ -96,7 +96,7 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/40">
           <Clock className="w-3 h-3" />
-          Request sent
+          Request Sent
         </span>
       );
     }

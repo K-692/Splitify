@@ -35,6 +35,7 @@ export interface Friendship {
   user1Uid: string;
   user2Uid: string;
   createdAt: number;
+  requestId?: string;
 }
 
 export interface EventMember {

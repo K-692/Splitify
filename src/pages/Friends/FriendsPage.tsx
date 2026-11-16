@@ -47,6 +47,11 @@ export const FriendsPage: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
+    // Run safe repair for any previously accepted friend requests that missed friendship creation
+    dataService.repairAcceptedFriendRequests(user).catch((err) => {
+      console.warn('[FriendsPage] Friendship repair check warning:', err);
+    });
+
     const unsubRequests = dataService.subscribeFriendRequests(
       user.uid,
       (received, sent) => {
@@ -60,17 +65,22 @@ export const FriendsPage: React.FC = () => {
     });
 
     let isCurrent = true;
+    let currentVersion = 0;
     const unsubFriends = dataService.subscribeFriends(user.uid, async (list) => {
+      const version = ++currentVersion;
       setFriendships(list);
-      // Fetch user profile for each friend by UID
-      const friendUids = list.map((fs) => (fs.user1Uid === user.uid ? fs.user2Uid : fs.user1Uid));
+      // Fetch user profile for each friend by UID, excluding currentUser
+      const friendUids = list
+        .map((fs) => (fs.user1Uid === user.uid ? fs.user2Uid : fs.user1Uid))
+        .filter((uid) => Boolean(uid) && uid !== user.uid);
+
       const profileMap = await dataService.getUsersByUids(friendUids);
-      if (!isCurrent) return;
+      if (!isCurrent || version !== currentVersion) return;
 
       const profiles: UserProfile[] = [];
       const seenUids = new Set<string>();
       for (const uid of friendUids) {
-        if (!seenUids.has(uid)) {
+        if (!seenUids.has(uid) && uid !== user.uid) {
           seenUids.add(uid);
           if (profileMap[uid]) {
             profiles.push(profileMap[uid]);
@@ -255,7 +265,7 @@ export const FriendsPage: React.FC = () => {
                   />
                   <div>
                     <p className="text-sm font-black text-slate-900 dark:text-white">
-                      {searchResult.displayName}
+                      {getFirstName(searchResult.displayName)}
                     </p>
                     <p className="text-xs text-teal-600 dark:text-teal-400 font-bold">
                       @{searchResult.username}
@@ -265,7 +275,7 @@ export const FriendsPage: React.FC = () => {
 
                 {searchResult.uid === user.uid ? (
                   <span className="text-xs font-bold text-slate-400">That&apos;s you!</span>
-                ) : friendProfiles.some((f) => f.uid === searchResult.uid) ? (
+                ) : (friendProfiles.some((f) => f.uid === searchResult.uid) || friendships.some((f) => (f.user1Uid === searchResult.uid && f.user2Uid === user.uid) || (f.user2Uid === searchResult.uid && f.user1Uid === user.uid))) ? (
                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <UserCheck className="w-4 h-4" /> Already Friends
                   </span>
@@ -275,7 +285,7 @@ export const FriendsPage: React.FC = () => {
                   />
                 ) : (sentRequests.some((r) => r.toUid === searchResult.uid) || isFriendRequestOnCooldown(searchResult.uid)) ? (
                   <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 px-2.5 py-1 rounded-xl flex items-center gap-1">
-                    <Clock className="w-4 h-4" /> Request sent
+                    <Clock className="w-4 h-4" /> Request Sent
                   </span>
                 ) : (
                   <Button

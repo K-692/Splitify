@@ -35,10 +35,10 @@ rules_version = '2';
 //   - toUid: string (required, immutable) - Recipient UID
 //   - fromDisplayName: string (required, 1-100 chars) - Sender display name
 //   - fromUsername: string (required, 1-30 chars) - Sender handle
-//   - fromPhotoURL: string (optional, URL <= 2000 chars) - Sender avatar
-//   - toDisplayName: string (optional, <= 100 chars) - Recipient display name
-//   - toUsername: string (optional, <= 30 chars) - Recipient handle
-//   - toPhotoURL: string (optional, URL <= 2000 chars) - Recipient avatar
+//   - fromPhotoURL: string | null (optional, URL <= 2000 chars) - Sender avatar
+//   - toDisplayName: string | null (optional, <= 100 chars) - Recipient display name
+//   - toUsername: string | null (optional, <= 30 chars) - Recipient handle
+//   - toPhotoURL: string | null (optional, URL <= 2000 chars) - Recipient avatar
 //   - status: string (required, 'pending' | 'accepted' | 'declined' | 'cancelled')
 //   - createdAt: number (required, immutable) - Timestamp
 //   - updatedAt: number (required) - Timestamp of last status change
@@ -49,6 +49,7 @@ rules_version = '2';
 //   - user1Uid: string (required, immutable) - First friend UID
 //   - user2Uid: string (required, immutable) - Second friend UID
 //   - createdAt: number (required, immutable) - Established timestamp
+//   - requestId: string (optional, immutable, <= 128 chars) - Associated accepted friend request ID
 //
 // Collection: eventInvitations
 // Document ID: {invitationId}
@@ -193,7 +194,7 @@ rules_version = '2';
 //   - type: string (required, NotificationType)
 //   - senderUid: string (required, immutable) - Triggering user UID
 //   - senderName: string (required, 1-100 chars) - Sender display name
-//   - senderPhotoURL: string (optional, URL <= 2000 chars) - Sender avatar
+//   - senderPhotoURL: string | null (optional, URL <= 2000 chars) - Sender avatar
 //   - eventId: string (optional, <= 128 chars) - Associated event ID
 //   - eventName: string (optional, <= 100 chars) - Associated event name
 //   - amountMinor: number (optional) - Associated money amount
@@ -295,19 +296,35 @@ service cloud.firestore {
              data.status in ['pending', 'accepted', 'declined', 'cancelled'] &&
              data.createdAt is number &&
              data.updatedAt is number &&
-             (!('fromPhotoURL' in data) || (data.fromPhotoURL is string && data.fromPhotoURL.size() <= 2000 && (data.fromPhotoURL.size() == 0 || isValidUrl(data.fromPhotoURL)))) &&
-             (!('toDisplayName' in data) || (data.toDisplayName is string && data.toDisplayName.size() <= 100)) &&
-             (!('toUsername' in data) || (data.toUsername is string && data.toUsername.size() <= 30)) &&
-             (!('toPhotoURL' in data) || (data.toPhotoURL is string && data.toPhotoURL.size() <= 2000 && (data.toPhotoURL.size() == 0 || isValidUrl(data.toPhotoURL))));
+             (!('fromPhotoURL' in data) || data.fromPhotoURL == null || (data.fromPhotoURL is string && data.fromPhotoURL.size() <= 2000 && (data.fromPhotoURL.size() == 0 || isValidUrl(data.fromPhotoURL)))) &&
+             (!('toDisplayName' in data) || data.toDisplayName == null || (data.toDisplayName is string && data.toDisplayName.size() <= 100)) &&
+             (!('toUsername' in data) || data.toUsername == null || (data.toUsername is string && data.toUsername.size() <= 30)) &&
+             (!('toPhotoURL' in data) || data.toPhotoURL == null || (data.toPhotoURL is string && data.toPhotoURL.size() <= 2000 && (data.toPhotoURL.size() == 0 || isValidUrl(data.toPhotoURL))));
     }
 
     function isValidFriendship(data) {
       return data.keys().hasAll(['user1Uid', 'user2Uid', 'createdAt']) &&
-             data.keys().hasOnly(['user1Uid', 'user2Uid', 'createdAt']) &&
+             data.keys().hasOnly(['user1Uid', 'user2Uid', 'createdAt', 'requestId']) &&
              data.user1Uid is string && data.user1Uid.size() >= 1 && data.user1Uid.size() <= 128 &&
              data.user2Uid is string && data.user2Uid.size() >= 1 && data.user2Uid.size() <= 128 &&
              data.user1Uid != data.user2Uid &&
-             data.createdAt is number;
+             data.createdAt is number &&
+             (!('requestId' in data) || data.requestId == null || (data.requestId is string && data.requestId.size() <= 128));
+    }
+
+    function isValidFriendshipRequest(data) {
+      return exists(/databases/$(database)/documents/friendRequests/$(data.requestId)) &&
+             getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.status == 'accepted' &&
+             (
+               (data.user1Uid == getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.fromUid &&
+                data.user2Uid == getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.toUid) ||
+               (data.user1Uid == getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.toUid &&
+                data.user2Uid == getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.fromUid)
+             ) &&
+             (
+               request.auth.uid == getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.fromUid ||
+               request.auth.uid == getAfter(/databases/$(database)/documents/friendRequests/$(data.requestId)).data.toUid
+             );
     }
 
     function isValidEventInvitation(data) {
@@ -557,7 +574,7 @@ service cloud.firestore {
              data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
              data.read is bool &&
              data.createdAt is number &&
-             (!('senderPhotoURL' in data) || (data.senderPhotoURL is string && data.senderPhotoURL.size() <= 2000 && (data.photoURL.size() == 0 || isValidUrl(data.senderPhotoURL)))) &&
+             (!('senderPhotoURL' in data) || data.senderPhotoURL == null || (data.senderPhotoURL is string && data.senderPhotoURL.size() <= 2000 && (data.senderPhotoURL.size() == 0 || isValidUrl(data.senderPhotoURL)))) &&
              (!('eventId' in data) || (data.eventId is string && data.eventId.size() <= 128)) &&
              (!('eventName' in data) || (data.eventName is string && data.eventName.size() <= 100)) &&
              (!('amountMinor' in data) || data.amountMinor is number) &&
@@ -643,9 +660,18 @@ service cloud.firestore {
                        request.resource.data.status == 'pending' &&
                        isValidFriendRequest(request.resource.data);
 
-      // Either party can update status (accept/decline/cancel)
+      // Status transitions:
+      // - If sender (request.auth.uid == resource.data.fromUid): can only cancel pending request
+      // - If recipient (request.auth.uid == resource.data.toUid): can accept or decline pending request
       allow update: if isAuthenticated() &&
-                       (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid) &&
+                       (
+                         (request.auth.uid == resource.data.fromUid &&
+                          resource.data.status == 'pending' &&
+                          request.resource.data.status == 'cancelled') ||
+                         (request.auth.uid == resource.data.toUid &&
+                          resource.data.status == 'pending' &&
+                          request.resource.data.status in ['accepted', 'declined'])
+                       ) &&
                        areImmutableFieldsUnchanged(['fromUid', 'toUid', 'createdAt']) &&
                        isValidFriendRequest(request.resource.data);
 
@@ -663,7 +689,12 @@ service cloud.firestore {
       // Either friend can create the friendship record
       allow create: if isAuthenticated() &&
                        (request.auth.uid == request.resource.data.user1Uid || request.auth.uid == request.resource.data.user2Uid) &&
-                       isValidFriendship(request.resource.data);
+                       isValidFriendship(request.resource.data) &&
+                       (
+                         !('requestId' in request.resource.data) ||
+                         request.resource.data.requestId == null ||
+                         isValidFriendshipRequest(request.resource.data)
+                       );
 
       // Friendships are immutable once established
       allow update: if false;

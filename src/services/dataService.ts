@@ -3,6 +3,7 @@ import {
   doc,
   getDocs,
   getDoc,
+  setDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -52,6 +53,11 @@ function generateInvitationToken(): string {
     }
   }
   return token;
+}
+
+export function getFriendshipDocId(uid1: string, uid2: string): string {
+  const [u1, u2] = [uid1, uid2].sort();
+  return `${u1}_${u2}`;
 }
 
 // Local storage keys for mock/offline fallback
@@ -1916,7 +1922,12 @@ export const dataService = {
       const load = () => {
         const all = getLocal<Friendship[]>('friendships', []);
         const userFriends = all.filter((f) => f.user1Uid === userId || f.user2Uid === userId);
-        callback(userFriends);
+        const map = new Map<string, Friendship>();
+        for (const f of userFriends) {
+          const pairKey = [f.user1Uid, f.user2Uid].sort().join('_');
+          if (!map.has(pairKey)) map.set(pairKey, f);
+        }
+        callback(Array.from(map.values()));
       };
       load();
       const handler = () => load();
@@ -1929,29 +1940,47 @@ export const dataService = {
 
     const emit = () => {
       const map = new Map<string, Friendship>();
-      for (const f of list1) map.set(f.id, f);
-      for (const f of list2) map.set(f.id, f);
+      for (const f of list1) {
+        const pairKey = [f.user1Uid, f.user2Uid].sort().join('_');
+        if (!map.has(pairKey)) map.set(pairKey, f);
+      }
+      for (const f of list2) {
+        const pairKey = [f.user1Uid, f.user2Uid].sort().join('_');
+        if (!map.has(pairKey)) map.set(pairKey, f);
+      }
       callback(Array.from(map.values()));
     };
 
     const q1 = query(collection(db, 'friendships'), where('user1Uid', '==', userId));
     const q2 = query(collection(db, 'friendships'), where('user2Uid', '==', userId));
 
-    const unsub1 = onSnapshot(q1, (snapshot) => {
-      list1 = [];
-      snapshot.forEach((d) => {
-        list1.push({ ...d.data(), id: d.id } as Friendship);
-      });
-      emit();
-    });
+    const unsub1 = onSnapshot(
+      q1,
+      (snapshot) => {
+        list1 = [];
+        snapshot.forEach((d) => {
+          list1.push({ ...d.data(), id: d.id } as Friendship);
+        });
+        emit();
+      },
+      (error) => {
+        console.error('subscribeFriends q1 error:', error);
+      }
+    );
 
-    const unsub2 = onSnapshot(q2, (snapshot) => {
-      list2 = [];
-      snapshot.forEach((d) => {
-        list2.push({ ...d.data(), id: d.id } as Friendship);
-      });
-      emit();
-    });
+    const unsub2 = onSnapshot(
+      q2,
+      (snapshot) => {
+        list2 = [];
+        snapshot.forEach((d) => {
+          list2.push({ ...d.data(), id: d.id } as Friendship);
+        });
+        emit();
+      },
+      (error) => {
+        console.error('subscribeFriends q2 error:', error);
+      }
+    );
 
     return () => {
       unsub1();
@@ -1964,53 +1993,148 @@ export const dataService = {
       throw new Error('You cannot send a friend request to yourself');
     }
 
-    const newRequest: Omit<FriendRequest, 'id'> = {
+    if (!isFirebaseConfigured() || !db) {
+      const friendships = getLocal<Friendship[]>('friendships', []);
+      const alreadyFriends = friendships.some(
+        (f) =>
+          (f.user1Uid === fromUser.uid && f.user2Uid === toUser.uid) ||
+          (f.user1Uid === toUser.uid && f.user2Uid === fromUser.uid)
+      );
+      if (alreadyFriends) {
+        throw new Error('You are already friends with this user');
+      }
+
+      const all = getLocal<FriendRequest[]>('friend_requests', []);
+      const existingOutgoing = all.find(
+        (r) => r.fromUid === fromUser.uid && r.toUid === toUser.uid && r.status === 'pending'
+      );
+      if (existingOutgoing) {
+        throw new Error('A friend request has already been sent to this user.');
+      }
+
+      const existingIncoming = all.find(
+        (r) => r.fromUid === toUser.uid && r.toUid === fromUser.uid && r.status === 'pending'
+      );
+      if (existingIncoming) {
+        throw new Error('This user has already sent you a friend request. You can accept it from your Received Requests.');
+      }
+
+      const reqId = 'req_' + Date.now();
+      const newRequest: FriendRequest = {
+        id: reqId,
+        fromUid: fromUser.uid,
+        toUid: toUser.uid,
+        fromDisplayName: fromUser.displayName,
+        fromUsername: fromUser.username,
+        fromPhotoURL: fromUser.photoURL,
+        toDisplayName: toUser.displayName,
+        toUsername: toUser.username,
+        toPhotoURL: toUser.photoURL,
+        status: 'pending',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      all.unshift(sanitizeForFirestore(newRequest));
+      setLocal('friend_requests', all);
+
+      try {
+        await dataService.createNotification({
+          recipientUid: toUser.uid,
+          type: 'friend_request_received',
+          senderUid: fromUser.uid,
+          senderName: fromUser.displayName,
+          senderPhotoURL: fromUser.photoURL,
+          title: 'Friend Request',
+          description: `${fromUser.displayName} (@${fromUser.username}) sent you a friend request`,
+          actionData: { requestId: reqId, fromUid: fromUser.uid },
+        });
+      } catch (notifErr) {
+        console.warn('Friend request was saved, but notification could not be created:', notifErr);
+      }
+      return;
+    }
+
+    // 1. Check if already friends via deterministic doc ID
+    const fsDocId = getFriendshipDocId(fromUser.uid, toUser.uid);
+    const fsDocRef = doc(db, 'friendships', fsDocId);
+    const fsSnap = await getDoc(fsDocRef);
+    if (fsSnap.exists()) {
+      throw new Error('You are already friends with this user');
+    }
+
+    // Check legacy friendships where user1Uid or user2Uid matches
+    const [legacySnap1, legacySnap2] = await Promise.all([
+      getDocs(query(collection(db, 'friendships'), where('user1Uid', '==', fromUser.uid))),
+      getDocs(query(collection(db, 'friendships'), where('user2Uid', '==', fromUser.uid))),
+    ]);
+    const isLegacyFriend =
+      legacySnap1.docs.some((d) => d.data().user2Uid === toUser.uid) ||
+      legacySnap2.docs.some((d) => d.data().user1Uid === toUser.uid);
+    if (isLegacyFriend) {
+      throw new Error('You are already friends with this user');
+    }
+
+    // 2. Check for pending outgoing request
+    const qOutgoing = query(
+      collection(db, 'friendRequests'),
+      where('fromUid', '==', fromUser.uid),
+      where('status', '==', 'pending')
+    );
+    const outgoingSnap = await getDocs(qOutgoing);
+    if (outgoingSnap.docs.some((d) => d.data().toUid === toUser.uid)) {
+      throw new Error('A friend request has already been sent to this user.');
+    }
+
+    // 3. Check for pending incoming reverse request
+    const qIncoming = query(
+      collection(db, 'friendRequests'),
+      where('toUid', '==', fromUser.uid),
+      where('status', '==', 'pending')
+    );
+    const incomingSnap = await getDocs(qIncoming);
+    if (incomingSnap.docs.some((d) => d.data().fromUid === toUser.uid)) {
+      throw new Error('This user has already sent you a friend request. You can accept it from your Received Requests.');
+    }
+
+    // 4. Construct request payload and sanitize undefined values
+    const newRequest: any = {
       fromUid: fromUser.uid,
       toUid: toUser.uid,
       fromDisplayName: fromUser.displayName,
       fromUsername: fromUser.username,
-      fromPhotoURL: fromUser.photoURL,
-      toDisplayName: toUser.displayName,
-      toUsername: toUser.username,
-      toPhotoURL: toUser.photoURL,
       status: 'pending',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+    if (fromUser.photoURL) newRequest.fromPhotoURL = fromUser.photoURL;
+    if (toUser.displayName) newRequest.toDisplayName = toUser.displayName;
+    if (toUser.username) newRequest.toUsername = toUser.username;
+    if (toUser.photoURL) newRequest.toPhotoURL = toUser.photoURL;
 
-    let reqId: string;
-    if (!isFirebaseConfigured() || !db) {
-      const all = getLocal<FriendRequest[]>('friend_requests', []);
-      const existing = all.find(
-        (r) =>
-          ((r.fromUid === fromUser.uid && r.toUid === toUser.uid) ||
-            (r.fromUid === toUser.uid && r.toUid === fromUser.uid)) &&
-          r.status === 'pending'
-      );
-      if (existing) throw new Error('A friend request already exists between you');
-      reqId = 'req_' + Date.now();
-      all.unshift({ ...newRequest, id: reqId });
-      setLocal('friend_requests', all);
-    } else {
-      const docRef = await addDoc(collection(db, 'friendRequests'), newRequest);
-      reqId = docRef.id;
+    const sanitized = sanitizeForFirestore(newRequest);
+    const docRef = await addDoc(collection(db, 'friendRequests'), sanitized);
+    const reqId = docRef.id;
+
+    // 5. Send notification (safely wrapped so notification failure does not fail the friend request)
+    try {
+      await dataService.createNotification({
+        recipientUid: toUser.uid,
+        type: 'friend_request_received',
+        senderUid: fromUser.uid,
+        senderName: fromUser.displayName,
+        senderPhotoURL: fromUser.photoURL,
+        title: 'Friend Request',
+        description: `${fromUser.displayName} (@${fromUser.username}) sent you a friend request`,
+        actionData: { requestId: reqId, fromUid: fromUser.uid },
+      });
+    } catch (notifErr) {
+      console.warn('Friend request was saved, but notification could not be created:', notifErr);
     }
-
-    // Send notification
-    await dataService.createNotification({
-      recipientUid: toUser.uid,
-      type: 'friend_request_received',
-      senderUid: fromUser.uid,
-      senderName: fromUser.displayName,
-      senderPhotoURL: fromUser.photoURL,
-      title: 'Friend Request',
-      description: `${fromUser.displayName} (@${fromUser.username}) sent you a friend request`,
-      actionData: { requestId: reqId, fromUid: fromUser.uid },
-    });
   },
 
   async respondToFriendRequest(requestId: string, accept: boolean, currentUser: UserProfile): Promise<void> {
-    if (!isFirebaseConfigured() || !db) {
+    const firestore = db;
+    if (!isFirebaseConfigured() || !firestore) {
       const all = getLocal<FriendRequest[]>('friend_requests', []);
       const req = all.find((r) => r.id === requestId);
       if (req && req.status === 'pending') {
@@ -2020,77 +2144,191 @@ export const dataService = {
 
         if (accept) {
           const friendships = getLocal<Friendship[]>('friendships', []);
+          const [u1, u2] = [req.fromUid, req.toUid].sort();
+          const fsDocId = `${u1}_${u2}`;
           const already = friendships.some(
             (f) =>
-              (f.user1Uid === req.fromUid && f.user2Uid === req.toUid) ||
-              (f.user1Uid === req.toUid && f.user2Uid === req.fromUid)
+              (f.user1Uid === u1 && f.user2Uid === u2) ||
+              (f.user1Uid === u2 && f.user2Uid === u1)
           );
           if (!already) {
             friendships.push({
-              id: 'fs_' + Date.now(),
-              user1Uid: req.fromUid,
-              user2Uid: req.toUid,
+              id: fsDocId,
+              user1Uid: u1,
+              user2Uid: u2,
               createdAt: Date.now(),
+              requestId: req.id,
             });
             setLocal('friendships', friendships);
           }
 
-          await dataService.createNotification({
-            recipientUid: req.fromUid,
-            type: 'friend_request_accepted',
-            senderUid: currentUser.uid,
-            senderName: currentUser.displayName,
-            senderPhotoURL: currentUser.photoURL,
-            title: 'Friend Request Accepted',
-            description: `${currentUser.displayName} accepted your friend request`,
-          });
+          try {
+            await dataService.createNotification({
+              recipientUid: req.fromUid,
+              type: 'friend_request_accepted',
+              senderUid: currentUser.uid,
+              senderName: currentUser.displayName,
+              senderPhotoURL: currentUser.photoURL,
+              title: 'Friend Request Accepted',
+              description: `${currentUser.displayName} accepted your friend request`,
+            });
+          } catch (notifErr) {
+            console.warn('Friendship created locally, but notification could not be created:', notifErr);
+          }
         }
       }
       return;
     }
 
-    const ref = doc(db, 'friendRequests', requestId);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-    const req = snap.data() as FriendRequest;
-    if (req.status !== 'pending') return;
-
-    await updateDoc(ref, {
-      status: accept ? 'accepted' : 'declined',
-      updatedAt: Date.now(),
-    });
-
-    if (accept) {
-      // Check existing friendship to prevent duplicates
-      const qFs = query(
-        collection(db, 'friendships'),
-        where('user1Uid', 'in', [req.fromUid, req.toUid])
-      );
-      const fsSnap = await getDocs(qFs);
-      const alreadyFriends = fsSnap.docs.some(
-        (d) =>
-          (d.data().user1Uid === req.fromUid && d.data().user2Uid === req.toUid) ||
-          (d.data().user1Uid === req.toUid && d.data().user2Uid === req.fromUid)
-      );
-
-      if (!alreadyFriends) {
-        await addDoc(collection(db, 'friendships'), {
-          user1Uid: req.fromUid,
-          user2Uid: req.toUid,
-          createdAt: Date.now(),
-        });
+    let senderUid = '';
+    // Run Firestore transaction to atomically update request and create friendship
+    await runTransaction(firestore, async (transaction) => {
+      const reqRef = doc(firestore, 'friendRequests', requestId);
+      const reqSnap = await transaction.get(reqRef);
+      if (!reqSnap.exists()) {
+        throw new Error('Friend request not found');
+      }
+      const req = reqSnap.data() as FriendRequest;
+      if (req.status !== 'pending') {
+        throw new Error('Friend request is no longer pending');
+      }
+      if (req.toUid !== currentUser.uid) {
+        throw new Error('You are not authorized to respond to this friend request');
+      }
+      if (req.fromUid === req.toUid) {
+        throw new Error('Invalid friend request: sender and recipient cannot be the same');
       }
 
-      await dataService.createNotification({
-        recipientUid: req.fromUid,
-        type: 'friend_request_accepted',
-        senderUid: currentUser.uid,
-        senderName: currentUser.displayName,
-        senderPhotoURL: currentUser.photoURL,
-        title: 'Friend Request Accepted',
-        description: `${currentUser.displayName} accepted your friend request`,
-      });
+      senderUid = req.fromUid;
+      const now = Date.now();
+
+      if (accept) {
+        const [u1, u2] = [req.fromUid, req.toUid].sort();
+        const fsDocId = `${u1}_${u2}`;
+        const fsRef = doc(firestore, 'friendships', fsDocId);
+        const fsSnap = await transaction.get(fsRef);
+
+        transaction.update(reqRef, {
+          status: 'accepted',
+          updatedAt: now,
+        });
+
+        if (!fsSnap.exists()) {
+          const friendshipData: Omit<Friendship, 'id'> = {
+            user1Uid: u1,
+            user2Uid: u2,
+            createdAt: now,
+            requestId: requestId,
+          };
+          transaction.set(fsRef, sanitizeForFirestore(friendshipData));
+        }
+      } else {
+        transaction.update(reqRef, {
+          status: 'declined',
+          updatedAt: now,
+        });
+      }
+    });
+
+    if (accept && senderUid) {
+      try {
+        await dataService.createNotification({
+          recipientUid: senderUid,
+          type: 'friend_request_accepted',
+          senderUid: currentUser.uid,
+          senderName: currentUser.displayName,
+          senderPhotoURL: currentUser.photoURL,
+          title: 'Friend Request Accepted',
+          description: `${currentUser.displayName} accepted your friend request`,
+        });
+      } catch (notifErr) {
+        console.warn('Friendship created, but acceptance notification could not be created:', notifErr);
+      }
     }
+  },
+
+  async repairAcceptedFriendRequests(currentUser: UserProfile): Promise<number> {
+    const firestore = db;
+    if (!isFirebaseConfigured() || !firestore) {
+      const allReqs = getLocal<FriendRequest[]>('friend_requests', []);
+      const acceptedReqs = allReqs.filter(
+        (r) => (r.fromUid === currentUser.uid || r.toUid === currentUser.uid) && r.status === 'accepted'
+      );
+      const friendships = getLocal<Friendship[]>('friendships', []);
+      let repairedCount = 0;
+      for (const req of acceptedReqs) {
+        if (req.fromUid === req.toUid) continue;
+        const [u1, u2] = [req.fromUid, req.toUid].sort();
+        const exists = friendships.some(
+          (f) => (f.user1Uid === u1 && f.user2Uid === u2) || (f.user1Uid === u2 && f.user2Uid === u1)
+        );
+        if (!exists) {
+          friendships.push({
+            id: `${u1}_${u2}`,
+            user1Uid: u1,
+            user2Uid: u2,
+            createdAt: req.updatedAt || Date.now(),
+            requestId: req.id,
+          });
+          repairedCount++;
+        }
+      }
+      if (repairedCount > 0) setLocal('friendships', friendships);
+      return repairedCount;
+    }
+
+    const q1 = query(
+      collection(firestore, 'friendRequests'),
+      where('toUid', '==', currentUser.uid),
+      where('status', '==', 'accepted')
+    );
+    const q2 = query(
+      collection(firestore, 'friendRequests'),
+      where('fromUid', '==', currentUser.uid),
+      where('status', '==', 'accepted')
+    );
+
+    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    const acceptedRequests: FriendRequest[] = [];
+    snap1.forEach((d) => acceptedRequests.push({ ...d.data(), id: d.id } as FriendRequest));
+    snap2.forEach((d) => acceptedRequests.push({ ...d.data(), id: d.id } as FriendRequest));
+
+    let repaired = 0;
+    for (const req of acceptedRequests) {
+      if (req.fromUid === req.toUid) continue;
+      const [u1, u2] = [req.fromUid, req.toUid].sort();
+      const fsDocId = `${u1}_${u2}`;
+      const fsRef = doc(firestore, 'friendships', fsDocId);
+      const fsSnap = await getDoc(fsRef);
+
+      if (!fsSnap.exists()) {
+        const qLegacy1 = query(
+          collection(firestore, 'friendships'),
+          where('user1Uid', '==', currentUser.uid)
+        );
+        const qLegacy2 = query(
+          collection(firestore, 'friendships'),
+          where('user2Uid', '==', currentUser.uid)
+        );
+        const [legSnap1, legSnap2] = await Promise.all([getDocs(qLegacy1), getDocs(qLegacy2)]);
+        const otherUid = req.fromUid === currentUser.uid ? req.toUid : req.fromUid;
+        const legacyExists =
+          legSnap1.docs.some((d) => d.data().user2Uid === otherUid) ||
+          legSnap2.docs.some((d) => d.data().user1Uid === otherUid);
+
+        if (!legacyExists) {
+          const friendshipData = {
+            user1Uid: u1,
+            user2Uid: u2,
+            createdAt: req.updatedAt || Date.now(),
+            requestId: req.id,
+          };
+          await setDoc(fsRef, sanitizeForFirestore(friendshipData));
+          repaired++;
+        }
+      }
+    }
+    return repaired;
   },
 
   async cancelFriendRequest(requestId: string): Promise<void> {
@@ -3128,7 +3366,8 @@ export const dataService = {
       return;
     }
 
-    await addDoc(collection(db, 'users', params.recipientUid, 'notifications'), newNotif);
+    const sanitized = sanitizeForFirestore(newNotif);
+    await addDoc(collection(db, 'users', params.recipientUid, 'notifications'), sanitized);
   },
 
   async markNotificationRead(userId: string, notificationId: string): Promise<void> {
