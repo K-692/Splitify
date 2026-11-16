@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Splitify</string>
+    <string name="title_activity_main">Splitify</string>
+    <string name="package_name">com.splitify.app</string>
+    <string name="custom_url_scheme">com.splitify.app</string>
+    <string name="server_client_id">268134159684-91qvrjihpdui4rrdsd8irfv4vq2u99a5.apps.googleusercontent.com</string>
+</resources>

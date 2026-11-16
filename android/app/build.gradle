@@ -1,0 +1,104 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "com.splitify.app"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.splitify.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            def keystoreFile = null
+            def keystorePassword = null
+            def keyAliasName = null
+            def keyPasswordStr = null
+
+            // 1. Environment variables
+            if (System.getenv("SPLITIFY_KEYSTORE_PATH")) {
+                keystoreFile = file(System.getenv("SPLITIFY_KEYSTORE_PATH"))
+                keystorePassword = System.getenv("SPLITIFY_KEYSTORE_PASSWORD")
+                keyAliasName = System.getenv("SPLITIFY_KEY_ALIAS") ?: "splitify"
+                keyPasswordStr = System.getenv("SPLITIFY_KEY_PASSWORD") ?: keystorePassword
+            }
+
+            // 2. signing.properties file in root or android/ directory
+            def propFile = rootProject.file('signing.properties')
+            if (!keystoreFile && propFile.exists()) {
+                def props = new Properties()
+                props.load(new FileInputStream(propFile))
+                keystoreFile = file(props['storeFile'])
+                keystorePassword = props['storePassword']
+                keyAliasName = props['keyAlias']
+                keyPasswordStr = props['keyPassword']
+            }
+
+            // 3. Fallback to local splitify-release-key.jks in android/ folder
+            if (!keystoreFile) {
+                def defaultKey = rootProject.file('splitify-release-key.jks')
+                if (defaultKey.exists()) {
+                    keystoreFile = defaultKey
+                    keystorePassword = "splitify2026"
+                    keyAliasName = "splitify"
+                    keyPasswordStr = "splitify2026"
+                }
+            }
+
+            if (keystoreFile != null && keystoreFile.exists()) {
+                storeFile keystoreFile
+                storePassword keystorePassword
+                keyAlias keyAliasName
+                keyPassword keyPasswordStr
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

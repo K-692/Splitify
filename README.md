@@ -14,14 +14,53 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Live_App-k--692.github.io%2FSplitify-16AA88?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Live App" /></a>
+  <a href="https://github.com/K-692/Splitify/releases/download/v1.0.0/Splitify-v1.0.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.0.0_(Download)-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" /></a>
   <img src="https://img.shields.io/badge/Release-v1.0.0-16AA88?style=for-the-badge" alt="Release" />
   <img src="https://img.shields.io/badge/React-19-203D62?style=for-the-badge&logo=react" alt="React 19" />
+  <img src="https://img.shields.io/badge/Capacitor-6.2-119EFF?style=for-the-badge&logo=capacitor" alt="Capacitor" />
   <img src="https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Vite-6.2-646CFF?style=for-the-badge&logo=vite" alt="Vite" />
   <img src="https://img.shields.io/badge/Firebase-Auth_%26_Firestore-FFA611?style=for-the-badge&logo=firebase" alt="Firebase" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-3.4-38BDF8?style=for-the-badge&logo=tailwind-css" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Deployed_on-GitHub_Pages-222?style=for-the-badge&logo=github" alt="GitHub Pages" />
 </p>
+
+---
+
+## 📱 Download Splitify for Android
+
+Get the official **Splitify Android Application** for seamless, on-the-go collaborative expense management:
+
+<p align="center">
+  <a href="https://github.com/K-692/Splitify/releases/download/v1.0.0/Splitify-v1.0.0.apk">
+    <img src="https://img.shields.io/badge/Download_APK-v1.0.0_(Direct_Download)-16AA88?style=for-the-badge&logo=android&logoColor=white" alt="Download Splitify Android APK" />
+  </a>
+</p>
+
+| Attribute | Specification |
+|---|---|
+| **Version** | `v1.0.0` (Production Release) |
+| **Minimum Compatibility** | Android 8.0 Oreo (API level 26) or higher |
+| **Target SDK** | Android 14 (API level 34) |
+| **Package Name** | `com.splitify.app` |
+| **Direct APK Link** | [**Splitify-v1.0.0.apk**](https://github.com/K-692/Splitify/releases/download/v1.0.0/Splitify-v1.0.0.apk) |
+| **GitHub Release** | [Splitify Android v1.0.0 Release Notes](https://github.com/K-692/Splitify/releases/tag/v1.0.0) |
+
+### 🚀 Android Native Highlights & Integration
+- **Shared Real-Time Backend:** Log in with your existing Google Account on both web and Android — all events, expenses, settlements, and member balances stay synchronized instantly in real time via Cloud Firestore.
+- **Native Google Authentication:** Secure Google Sign-In powered by Capacitor Google Auth and Firebase Authentication with hardware credentials.
+- **Multi-Device Coexistence:** Web and Android clients run concurrently without account lockouts or session overwrites.
+- **Smart Hardware Back Button:** Intuitively dismisses active modals first, then navigates between screens or prompts to exit when on the home dashboard.
+- **Deep Linking Support:** Universal links (`https://k-692.github.io/Splitify/join/<token>`) and custom URI scheme (`splitify://join/<token>`) open event invitations directly inside the installed Android app.
+- **Online-Only Architecture:** Detects network disconnects dynamically and alerts you with a real-time reconnect banner so ledger integrity is never compromised by unsynced offline state.
+- **Mobile-Optimized UX:** Full dark/light status bar theming, notch and safe-area compatibility, responsive modal adjustments for device keyboards, and high-DPI adaptive launcher icons.
+
+### 📲 How to Install the APK on Your Android Device
+1. Download **`Splitify-v1.0.0.apk`** on your Android phone using the direct link above.
+2. Tap the downloaded file in your browser or Downloads folder.
+3. If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **Allow from this source**.
+4. Tap **Install** and launch **Splitify**.
+5. Sign in with your Google account — all your events and balances are instantly available!
 
 ---
 
@@ -116,13 +155,15 @@ Splitify adopts an **Item-First architecture** designed for speed, flexibility, 
 | Layer | Technologies |
 |---|---|
 | **Frontend Framework** | React 19, TypeScript, Vite 6 |
-| **Routing** | React Router v7 with GitHub Pages SPA redirect support |
+| **Mobile Runtime** | Capacitor 6.2 (Android 8.0+ / API 26-34) |
+| **Native Plugins** | App, Network, Status Bar, Google Auth |
+| **Routing** | React Router v7 with dual-mode dynamic base (Web `/Splitify/` and Native `/`) |
 | **Styling** | Tailwind CSS v3.4, Custom CSS Design Tokens, Lucide Icons |
 | **State & Calculations** | Custom React Contexts, Pure Domain Financial Calculation Engine |
 | **Backend & Database** | Firebase Authentication (Google Sign-In), Cloud Firestore Modular SDK v11 |
 | **Security** | Cloud Firestore Security Rules (`firestore.rules`) |
 | **Testing** | Vitest, React Testing Library, JSDOM (14 test suites, 69 unit tests) |
-| **CI/CD & Deployment** | GitHub Actions (`deploy-pages`), GitHub Pages |
+| **CI/CD & Deployment** | GitHub Actions (`deploy-pages`, `android-build`), GitHub Pages, Direct APK Releases |
 
 ---
 
@@ -130,6 +171,15 @@ Splitify adopts an **Item-First architecture** designed for speed, flexibility, 
 
 ```text
 Splitify/
+├── android/                       # Native Android Project (Capacitor)
+│   ├── app/
+│   │   ├── src/main/              # Native Android manifests, mipmaps, assets
+│   │   │   ├── AndroidManifest.xml# Deep links, permissions, soft-input settings
+│   │   │   └── res/               # Brand launcher icons, splash screen drawables
+│   │   ├── google-services.json   # Android Firebase configuration
+│   │   └── build.gradle           # SDK 34, MinSDK 26, release signing configuration
+│   └── signing.properties.example # Release signing template
+├── capacitor.config.ts            # Capacitor native runtime configuration
 ├── public/
 │   ├── assets/
 │   │   └── splitify-logo.png      # Official branding logo
@@ -137,13 +187,15 @@ Splitify/
 ├── src/
 │   ├── app/
 │   │   ├── providers/             # AuthContext, ThemeContext, NotificationContext
-│   │   └── router/                # Protected routes and navigation
+│   │   └── router/                # Protected routes and dynamic base routing
 │   ├── components/
-│   │   ├── common/                # Button, Avatar, Modal, Badge
+│   │   ├── common/                # Button, Avatar, Modal, Badge, NetworkStatusBanner
 │   │   ├── layout/                # Navbar, BottomNav (3-tab: Home, Inbox, Profile), AppLayout
 │   │   ├── expenses/              # ExpenseModal, BulkDeleteModal, ItemInfoModal
 │   │   ├── events/                # ShareInviteModal, SlotsModal
 │   │   └── dashboard/             # PaymentDetailsModal, ConfirmPaymentReceiptModal
+│   ├── hooks/
+│   │   └── useAndroidNativeBridge.ts # Back button modal dismiss, deep linking, status bar
 │   ├── pages/
 │   │   ├── Login/                 # Google Sign-in & demo persona login
 │   │   ├── Home/                  # Event overview, quick actions, event cards
@@ -160,11 +212,13 @@ Splitify/
 │   ├── styles/                    # Tailwind CSS and brand token definitions
 │   └── types/                     # Typed domain interfaces
 ├── tests/                         # Comprehensive Vitest unit & component test suites (69 tests)
-├── .github/workflows/deploy.yml   # Automated GitHub Pages CI/CD workflow
+├── .github/workflows/
+│   ├── deploy.yml                 # Automated GitHub Pages web CI/CD workflow
+│   └── android.yml                # Automated Android APK build workflow
 ├── firestore.rules                # Production Cloud Firestore Security Rules
 ├── firestore.indexes.json         # Firestore query composite indexes
 ├── firebase.json                  # Firebase project manifest
-├── vite.config.ts                 # Base path /Splitify/, code-splitting, Vitest config
+├── vite.config.ts                 # Dual-target build config (Web /Splitify/, Capacitor /)
 └── package.json
 ```
 
@@ -234,14 +288,46 @@ All 14 test suites and 69 tests execute locally with 100% pass rate.
 
 ---
 
-## 📦 Production Build
+## 📦 Production Web Build
 
 ```bash
-# Compile TypeScript and bundle with Vite
+# Compile TypeScript and bundle with Vite for GitHub Pages deployment
 npm run build
 ```
 
 Production output is generated in `dist/` with optimized vendor chunking and SPA redirect support via `dist/404.html`.
+
+---
+
+## 🤖 Android Development & Build
+
+Splitify is bundled into a native Android application using **Capacitor 6**. The Android app and web application coexist cleanly in the same repository and share business logic, financial calculations, state management, and real-time Firestore database interactions.
+
+### Prerequisites
+- Node.js (v18+)
+- Java JDK 17 (e.g. Eclipse Temurin 17)
+- Android SDK (API 34, Build Tools 34.0.0)
+- `ANDROID_HOME` pointing to your Android SDK directory
+
+### Local Android Commands
+```bash
+# Compile web assets with native dynamic base and sync to the Android project
+npm run android:sync
+
+# Assemble native Android release APK
+npm run android:build
+
+# Open native Android project in Android Studio
+npm run android:open
+```
+
+### Release Signing Configuration
+Release signing uses standard Gradle properties. A template is provided in `android/signing.properties.example`.
+Credentials can be configured via environment variables or a local `signing.properties` (never committed to git):
+- `SPLITIFY_KEYSTORE_PATH`: Path to your `.jks` keystore file
+- `SPLITIFY_KEYSTORE_PASSWORD`: Keystore password
+- `SPLITIFY_KEY_ALIAS`: Alias of your release key (default: `splitify`)
+- `SPLITIFY_KEY_PASSWORD`: Key password
 
 ---
 

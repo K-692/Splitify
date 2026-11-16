@@ -1,6 +1,8 @@
 import {
   signInWithPopup,
   signInWithRedirect,
+  signInWithCredential,
+  GoogleAuthProvider,
   signOut as fbSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -12,6 +14,8 @@ import {
   updateDoc,
   serverTimestamp,
 } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { auth, db, googleProvider, isFirebaseConfigured } from './config';
 import { UserProfile } from '@/types';
 import { getFirstName } from '@/utils/name';
@@ -126,6 +130,26 @@ export const authService = {
       return;
     }
 
+    if (Capacitor.isNativePlatform()) {
+      try {
+        GoogleAuth.initialize({
+          clientId: '268134159684-91qvrjihpdui4rrdsd8irfv4vq2u99a5.apps.googleusercontent.com',
+          scopes: ['profile', 'email'],
+          grantOfflineAccess: false,
+        });
+      } catch {
+        // Initialization can be safely re-attempted
+      }
+      const googleUser = await GoogleAuth.signIn();
+      const idToken = googleUser?.authentication?.idToken;
+      if (!idToken) {
+        throw new Error('Google Sign-In did not return an authentication token.');
+      }
+      const credential = GoogleAuthProvider.credential(idToken);
+      await signInWithCredential(auth, credential);
+      return;
+    }
+
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (popupError: any) {
@@ -209,6 +233,13 @@ export const authService = {
   async signOut(): Promise<void> {
     localStorage.removeItem(MOCK_STORAGE_KEY);
     window.dispatchEvent(new Event('storage'));
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await GoogleAuth.signOut();
+      } catch {
+        // Ignore native sign out error
+      }
+    }
     if (isFirebaseConfigured() && auth) {
       await fbSignOut(auth);
     }

@@ -3,10 +3,12 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const isCapacitor = process.env.VITE_BUILD_TARGET === 'capacitor';
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/Splitify/',
+  base: isCapacitor ? '/' : '/Splitify/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

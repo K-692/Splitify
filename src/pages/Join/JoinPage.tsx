@@ -6,6 +6,8 @@ import { SplitifyEvent, EventInvitationLink, EventSlot, EventMember } from '@/ty
 import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
 import { getFirstName } from '@/utils/name';
+import { NetworkStatusBanner } from '@/components/common/NetworkStatusBanner';
+import { useAndroidNativeBridge } from '@/hooks/useAndroidNativeBridge';
 import {
   CheckCircle,
   AlertCircle,
@@ -17,6 +19,7 @@ import {
 } from 'lucide-react';
 
 export const JoinPage: React.FC = () => {
+  useAndroidNativeBridge();
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { user, signInWithGoogle } = useAuth();
@@ -212,6 +215,7 @@ export const JoinPage: React.FC = () => {
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center p-4">
+      <NetworkStatusBanner />
       <div className="w-full max-w-lg bg-white dark:bg-[#15263C] rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-2xl transition-all">
         {/* Event Header Banner */}
         <div className="text-center mb-6">
@@ -226,9 +230,7 @@ export const JoinPage: React.FC = () => {
           </h1>
           <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">
             Invited by <span className="font-bold text-slate-700 dark:text-slate-200">
-              {invitationLink.createdByName.startsWith('@')
-                ? invitationLink.createdByName
-                : `@${invitationLink.createdByName.toLowerCase().replace(/\s+/g, '_')}`}
+              {invitationLink.createdByName.replace(/^@/, '')}
             </span>
           </p>
         </div>

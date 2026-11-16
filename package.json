@@ -6,11 +6,21 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && cp dist/index.html dist/404.html",
+    "build:android": "tsc && VITE_BUILD_TARGET=capacitor vite build",
+    "android:sync": "npm run build:android && npx cap sync android",
+    "android:build": "npm run android:sync && cd android && ./gradlew assembleRelease",
+    "android:open": "npx cap open android",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.3",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/core": "^6.2.3",
+    "@capacitor/network": "^6.0.4",
+    "@capacitor/status-bar": "^6.0.3",
+    "@codetrix-studio/capacitor-google-auth": "^3.4.0-rc.4",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "firebase": "^11.4.0",
@@ -21,6 +31,7 @@
     "tailwind-merge": "^3.0.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.3",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/canvas-confetti": "^1.9.0",

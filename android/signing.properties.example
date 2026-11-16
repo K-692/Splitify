@@ -1,0 +1,8 @@
+# Splitify Android Release Signing Configuration Example
+# Copy this file to android/signing.properties and configure your credentials.
+# NOTE: signing.properties is excluded in .gitignore and must NEVER be committed.
+
+storeFile=../splitify-release-key.jks
+storePassword=your-keystore-password
+keyAlias=splitify
+keyPassword=your-key-password

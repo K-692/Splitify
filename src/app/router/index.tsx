@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/app/providers/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/Login/LoginPage';
@@ -28,7 +29,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 export const AppRouter: React.FC = () => {
-  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/Splitify';
+  const basename = Capacitor.isNativePlatform()
+    ? ''
+    : (import.meta.env.BASE_URL.replace(/\/$/, '') || '/Splitify');
   return (
     <BrowserRouter basename={basename}>
       <Routes>

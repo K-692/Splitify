@@ -3,8 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { Button } from '@/components/common/Button';
 import { CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { NetworkStatusBanner } from '@/components/common/NetworkStatusBanner';
+import { useAndroidNativeBridge } from '@/hooks/useAndroidNativeBridge';
 
 export const LoginPage: React.FC = () => {
+  useAndroidNativeBridge();
   const { user, signInWithGoogle, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,6 +43,7 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div className="min-h-[85vh] flex items-center justify-center p-4">
+      <NetworkStatusBanner />
       <div className="w-full max-w-md bg-white dark:bg-[#15263C] rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8 sm:p-10 transition-all text-center">
         {/* Official Splitify Logo (No circular frame) */}
         <div className="w-48 sm:w-56 mx-auto mb-3 flex items-center justify-center">

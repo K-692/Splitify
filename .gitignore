@@ -30,6 +30,11 @@ dist-ssr
 .env.*.local
 *.pem
 serviceAccountKey.json
+*.jks
+*.keystore
+signing.properties
+*.apk
+*.aab
 
 # Test and coverage
 coverage
