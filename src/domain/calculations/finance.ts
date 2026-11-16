@@ -247,10 +247,9 @@ export function calculateEventFinancialOverview(
 
   const getHandleOrName = (m?: EventMember | null, fallback?: string): string => {
     if (!m) return fallback || 'Member';
-    if (m.username) {
-      return m.username.startsWith('@') ? m.username : `@${m.username}`;
-    }
-    return m.displayName || fallback || 'Member';
+    if (m.displayName) return m.displayName;
+    if (m.username) return m.username.replace(/^@/, '');
+    return fallback || 'Member';
   };
 
   // Total ordinary expense

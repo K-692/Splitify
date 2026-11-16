@@ -5,7 +5,7 @@ export interface UserProfile {
   displayName: string;
   email: string;
   photoURL?: string;
-  username: string; // unique lowercase e.g. "krish"
+  username?: string; // Optional legacy handle
   createdAt: number;
   updatedAt?: number;
   preferences?: {
@@ -20,7 +20,7 @@ export interface FriendRequest {
   fromUid: string;
   toUid: string;
   fromDisplayName: string;
-  fromUsername: string;
+  fromUsername?: string;
   fromPhotoURL?: string;
   toDisplayName?: string;
   toUsername?: string;

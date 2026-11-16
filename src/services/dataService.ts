@@ -36,7 +36,7 @@ import { formatAuditTimestamp, getTodayLocalDateString } from '@/utils/date';
 import { calculateEqualShares } from '@/domain/calculations/finance';
 import { sanitizeForFirestore } from '@/utils/firestoreSanitizer';
 import { getFirstName } from '@/utils/name';
-import { generateHandleCandidates } from '@/utils/handleSuggestions';
+
 
 function generateInvitationToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -76,11 +76,9 @@ function setLocal<T>(key: string, value: T): void {
 }
 
 function getActorHandle(user: { username?: string; displayName?: string }): string {
-  if (user.username) {
-    return user.username.startsWith('@') ? user.username : `@${user.username}`;
-  }
-  const clean = user.displayName ? user.displayName.toLowerCase().replace(/\s+/g, '_') : 'user';
-  return `@${clean}`;
+  if (user.displayName) return user.displayName;
+  if (user.username) return user.username.replace(/^@/, '');
+  return 'User';
 }
 
 export const dataService = {
@@ -2599,7 +2597,7 @@ export const dataService = {
     if (!event) throw new Error('Event not found');
 
     const token = generateInvitationToken();
-    const actorHandle = user.username ? `@${user.username}` : `@${getFirstName(user.displayName).toLowerCase()}`;
+    const actorHandle = getActorHandle(user);
     const membersCount = Object.keys(event.members || {}).length;
     const availableSlots = Object.values(event.slots || {})
       .filter((s) => !s.isClaimed)
@@ -3259,25 +3257,6 @@ export const dataService = {
     } catch {
       return false;
     }
-  },
-
-  async suggestAlternativeUsernames(
-    displayName: string,
-    requestedHandle: string,
-    maxSuggestions: number = 5
-  ): Promise<string[]> {
-    const candidates = generateHandleCandidates(displayName, requestedHandle);
-    const available: string[] = [];
-
-    for (const cand of candidates) {
-      const isAvail = await dataService.checkUsernameAvailable(cand);
-      if (isAvail) {
-        available.push(cand);
-        if (available.length >= maxSuggestions) break;
-      }
-    }
-
-    return available;
   },
 
   // ==========================================

@@ -11,7 +11,6 @@ import {
   LogOut,
   User,
   Home,
-  Users,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -35,7 +34,6 @@ export const Navbar: React.FC = () => {
 
   const navLinks = [
     { label: 'Home', path: '/', icon: Home },
-    { label: 'Friends', path: '/friends', icon: Users },
   ];
 
   return (
@@ -126,9 +124,11 @@ export const Navbar: React.FC = () => {
                     <p className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
                       {user.displayName}
                     </p>
-                    <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold truncate">
-                      @{user.username}
-                    </p>
+                    {user.email && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate">
+                        {user.email}
+                      </p>
+                    )}
                   </div>
 
                   <Link

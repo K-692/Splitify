@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   REMINDER_COOLDOWN_MS,
-  FRIEND_REQUEST_COOLDOWN_MS,
   getReminderCooldown,
   isReminderOnCooldown,
   setReminderCooldown,
-  getFriendRequestCooldown,
-  isFriendRequestOnCooldown,
-  setFriendRequestCooldown,
 } from '../src/utils/cooldown';
 import { dataService } from '../src/services/dataService';
 import { UserProfile } from '../src/types';
@@ -48,32 +44,6 @@ describe('Anti-Spam Cooldown & Universal Subitem Functionality', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + 5 * 60 * 1000 + 1000);
       expect(isReminderOnCooldown('user_debtor_1', 'event_123')).toBe(false);
       expect(getReminderCooldown('user_debtor_1', 'event_123')).toBe(0);
-    });
-  });
-
-  describe('Friend Request Cooldown (5 Minutes Anti-Spam)', () => {
-    it('should be initially false and 0 remaining', () => {
-      expect(isFriendRequestOnCooldown('target_user_99')).toBe(false);
-      expect(getFriendRequestCooldown('target_user_99')).toBe(0);
-    });
-
-    it('should enforce 5-minute cooldown after sending friend request', () => {
-      const now = 2000000;
-      vi.spyOn(Date, 'now').mockReturnValue(now);
-
-      setFriendRequestCooldown('target_user_99');
-      expect(isFriendRequestOnCooldown('target_user_99')).toBe(true);
-      expect(getFriendRequestCooldown('target_user_99')).toBe(FRIEND_REQUEST_COOLDOWN_MS);
-
-      // 2.5 minutes later
-      vi.spyOn(Date, 'now').mockReturnValue(now + 2.5 * 60 * 1000);
-      expect(isFriendRequestOnCooldown('target_user_99')).toBe(true);
-      expect(getFriendRequestCooldown('target_user_99')).toBe(2.5 * 60 * 1000);
-
-      // 5 minutes and 100ms later (expired)
-      vi.spyOn(Date, 'now').mockReturnValue(now + 5 * 60 * 1000 + 100);
-      expect(isFriendRequestOnCooldown('target_user_99')).toBe(false);
-      expect(getFriendRequestCooldown('target_user_99')).toBe(0);
     });
   });
 

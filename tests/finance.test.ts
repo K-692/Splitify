@@ -358,14 +358,14 @@ describe('Financial Calculations Engine', () => {
     expect(overview.totalExpenseMinor).toBe(24000);
     expect(overview.memberSummaries['uidB'].shareMinor).toBe(12000);
     expect(overview.memberSummaries['uidB'].netBalanceMinor).toBe(-12000);
-    expect(overview.memberSummaries['uidB'].displayName).toBe('@ayush');
+    expect(overview.memberSummaries['uidB'].displayName).toBe('Ayush');
 
     expect(overview.settlementSuggestions).toEqual([
       {
         fromUid: 'uidB',
-        fromName: '@ayush',
+        fromName: 'Ayush',
         toUid: 'uidA',
-        toName: '@krish',
+        toName: 'Krishnendu',
         amountMinor: 12000,
       },
     ]);

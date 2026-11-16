@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/app/providers/AuthContext';
 import { useTheme } from '@/app/providers/ThemeContext';
-import { dataService } from '@/services/dataService';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -10,7 +9,7 @@ import {
   Sun,
   LogOut,
   Mail,
-  AtSign,
+  User,
   Palette,
   Edit2,
   CheckCircle,
@@ -21,48 +20,43 @@ export const ProfilePage: React.FC = () => {
   const { user, signOut, updateProfile } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  const [isEditHandleModalOpen, setIsEditHandleModalOpen] = useState(false);
-  const [newHandle, setNewHandle] = useState('');
-  const [handleError, setHandleError] = useState<string | null>(null);
-  const [alternativeSuggestions, setAlternativeSuggestions] = useState<string[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [isSavingHandle, setIsSavingHandle] = useState(false);
+  const [isEditNameModalOpen, setIsEditNameModalOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [isSavingName, setIsSavingName] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   if (!user) return null;
 
-  const handleOpenEditHandle = () => {
-    setNewHandle(user.username || '');
-    setHandleError(null);
-    setAlternativeSuggestions([]);
-    setIsEditHandleModalOpen(true);
+  const handleOpenEditName = () => {
+    setNewName(user.displayName || '');
+    setNameError(null);
+    setIsEditNameModalOpen(true);
   };
 
-  const handleSaveHandle = async (e: React.FormEvent) => {
+  const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
-    setHandleError(null);
-    setIsSavingHandle(true);
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setNameError('Name cannot be empty');
+      return;
+    }
+    if (trimmed.length > 50) {
+      setNameError('Name must be 50 characters or less');
+      return;
+    }
+    setNameError(null);
+    setIsSavingName(true);
     try {
-      const updatedUsername = await dataService.changeUsernameHandle(user, newHandle);
-      await updateProfile({ username: updatedUsername });
-      setIsEditHandleModalOpen(false);
-      setAlternativeSuggestions([]);
-      setSuccessMsg(`Handle updated to @${updatedUsername}`);
+      await updateProfile({ displayName: trimmed });
+      setIsEditNameModalOpen(false);
+      setSuccessMsg('Name updated successfully');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
-      const errMsg = err.message || 'Failed to update handle';
-      setHandleError(errMsg);
-      setIsLoadingSuggestions(true);
-      try {
-        const sugs = await dataService.suggestAlternativeUsernames(user.displayName, newHandle);
-        setAlternativeSuggestions(sugs);
-      } catch {
-        // Silently ignore suggestion retrieval error
-      } finally {
-        setIsLoadingSuggestions(false);
-      }
+      const errMsg = err?.message || 'Failed to update name';
+      setNameError(errMsg);
     } finally {
-      setIsSavingHandle(false);
+      setIsSavingName(false);
     }
   };
 
@@ -89,45 +83,42 @@ export const ProfilePage: React.FC = () => {
       {/* Profile Card */}
       <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 text-center flex flex-col items-center">
         <Avatar src={user.photoURL} name={user.displayName} size="xl" className="mb-3" />
-        <h2 className="text-xl font-black text-slate-900 dark:text-white">
-          {user.displayName}
-        </h2>
-        <div className="flex items-center gap-1.5 mt-1">
-          <span className="text-xs font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-3 py-1 rounded-full font-mono">
-            @{user.username}
-          </span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-black text-slate-900 dark:text-white">
+            {user.displayName}
+          </h2>
           <button
             type="button"
-            onClick={handleOpenEditHandle}
+            onClick={handleOpenEditName}
             className="p-1 text-slate-400 hover:text-teal-500 transition-colors"
-            title="Edit Splitify Handle"
+            title="Edit Name"
           >
-            <Edit2 className="w-3.5 h-3.5" />
+            <Edit2 className="w-4 h-4" />
           </button>
         </div>
 
         <div className="w-full mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 space-y-3 text-left">
           <div className="flex items-center justify-between text-xs font-semibold py-1">
             <span className="text-slate-400 flex items-center gap-2">
-              <Mail className="w-4 h-4 text-teal-500" /> Email
-            </span>
-            <span className="text-slate-800 dark:text-slate-200">{user.email || 'N/A'}</span>
-          </div>
-
-          <div className="flex items-center justify-between text-xs font-semibold py-1">
-            <span className="text-slate-400 flex items-center gap-2">
-              <AtSign className="w-4 h-4 text-teal-500" /> Splitify Handle
+              <User className="w-4 h-4 text-teal-500" /> Display Name
             </span>
             <div className="flex items-center gap-2">
-              <span className="text-slate-800 dark:text-slate-200 font-mono">@{user.username}</span>
+              <span className="text-slate-800 dark:text-slate-200 font-bold">{user.displayName}</span>
               <button
                 type="button"
-                onClick={handleOpenEditHandle}
+                onClick={handleOpenEditName}
                 className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
               >
                 Edit
               </button>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between text-xs font-semibold py-1">
+            <span className="text-slate-400 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-teal-500" /> Email
+            </span>
+            <span className="text-slate-800 dark:text-slate-200">{user.email || 'N/A'}</span>
           </div>
         </div>
       </div>
@@ -179,77 +170,41 @@ export const ProfilePage: React.FC = () => {
         </Button>
       </div>
 
-      {/* Edit Handle Modal */}
+      {/* Edit Name Modal */}
       <Modal
-        isOpen={isEditHandleModalOpen}
-        onClose={() => setIsEditHandleModalOpen(false)}
-        title="Edit Splitify Handle"
-        emoji="🏷️"
+        isOpen={isEditNameModalOpen}
+        onClose={() => setIsEditNameModalOpen(false)}
+        title="Edit Name"
+        emoji="✏️"
         maxWidth="sm"
       >
-        <form onSubmit={handleSaveHandle} className="space-y-4">
+        <form onSubmit={handleSaveName} className="space-y-4">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Choose a unique handle for your Splitify profile. Your friends can find and add you by
-            this handle.
+            Update your display name. This name will be visible to members of events you join.
           </p>
 
-          {handleError && (
+          {nameError && (
             <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 text-xs font-semibold flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{handleError}</span>
-            </div>
-          )}
-
-          {alternativeSuggestions.length > 0 && (
-            <div className="p-3.5 rounded-2xl bg-teal-50/80 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-2">
-              <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 block">
-                Available handles related to your name (click to select):
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {alternativeSuggestions.map((sug) => (
-                  <button
-                    key={sug}
-                    type="button"
-                    onClick={() => {
-                      setNewHandle(sug);
-                      setHandleError(null);
-                    }}
-                    className="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 hover:bg-teal-100/60 dark:hover:bg-teal-900/50 transition-colors shadow-sm"
-                  >
-                    @{sug}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {isLoadingSuggestions && (
-            <div className="text-center py-1 text-xs text-slate-400">
-              Finding available handle suggestions...
+              <span>{nameError}</span>
             </div>
           )}
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Handle
+              Display Name
             </label>
-            <div className="relative flex items-center">
-              <span className="absolute left-3.5 text-slate-400 font-bold text-sm">@</span>
-              <input
-                type="text"
-                placeholder="e.g. rahul_s"
-                value={newHandle}
-                onChange={(e) => setNewHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                required
-                minLength={3}
-                maxLength={20}
-                autoFocus
-                className="w-full pl-8 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
-              />
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              3-20 characters. Lowercase letters, numbers, and underscores only.
-            </span>
+            <input
+              type="text"
+              placeholder="e.g. John"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              required
+              minLength={1}
+              maxLength={50}
+              autoFocus
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -257,12 +212,12 @@ export const ProfilePage: React.FC = () => {
               type="button"
               variant="ghost"
               size="md"
-              onClick={() => setIsEditHandleModalOpen(false)}
+              onClick={() => setIsEditNameModalOpen(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="md" isLoading={isSavingHandle}>
-              Save Handle
+            <Button type="submit" variant="primary" size="md" isLoading={isSavingName}>
+              Save Name
             </Button>
           </div>
         </form>

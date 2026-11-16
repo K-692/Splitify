@@ -14,7 +14,7 @@ rules_version = '2';
 //   - displayName: string (required, 1-100 chars) - User display name
 //   - email: string (required, <= 150 chars) - User email address
 //   - photoURL: string (optional, URL <= 2000 chars) - Avatar image URL
-//   - username: string (required, 1-30 chars, lowercase alphanumeric + underscore)
+//   - username: string (optional, <= 30 chars, lowercase alphanumeric + underscore)
 //   - createdAt: number (required, immutable) - Epoch timestamp in milliseconds
 //   - serverCreatedAt: timestamp | number (optional, immutable) - Server timestamp
 //   - preferences: map (optional) - User preferences:
@@ -256,14 +256,13 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'displayName', 'email', 'username', 'createdAt']) &&
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'createdAt']) &&
              data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'username', 'createdAt', 'serverCreatedAt', 'updatedAt', 'preferences', 'discoverable']) &&
              data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
              data.email is string && data.email.size() <= 150 &&
              (data.email.size() == 0 || isValidEmail(data.email)) &&
-             data.username is string && data.username.size() >= 1 && data.username.size() <= 30 &&
-             data.username.matches('^[a-z0-9_]+$') &&
+             (!('username' in data) || (data.username is string && data.username.size() <= 30 && data.username.matches('^[a-z0-9_]+$'))) &&
              data.createdAt is number &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2000 && (data.photoURL.size() == 0 || isValidUrl(data.photoURL)))) &&
              (!('serverCreatedAt' in data) || data.serverCreatedAt is timestamp || data.serverCreatedAt is number) &&
@@ -627,81 +626,20 @@ service cloud.firestore {
       }
     }
 
-    // 2. Unique Usernames registry
+    // 2. Usernames registry (deprecated - creation and updates disallowed; read permitted for authenticated handle lookups)
     match /usernames/{username} {
       allow read: if isAuthenticated();
-
-      // User claims their own unique handle
-      allow create: if isAuthenticated() &&
-                       request.auth.uid == request.resource.data.uid &&
-                       username.size() >= 1 &&
-                       username.size() <= 30 &&
-                       username.matches('^[a-z0-9_]+$') &&
-                       isValidUsernameDoc(request.resource.data);
-
-      allow update: if isAuthenticated() &&
-                       request.auth.uid == resource.data.uid &&
-                       areImmutableFieldsUnchanged(['uid', 'createdAt']) &&
-                       isValidUsernameDoc(request.resource.data);
-
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.uid;
+      allow write: if false;
     }
 
-    // 3. Friend Requests
+    // 3. Friend Requests (deprecated - completely closed)
     match /friendRequests/{requestId} {
-      // Only the sender and recipient can read
-      allow read: if isAuthenticated() &&
-                     (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
-
-      // Sender creates a pending friend request to a different user
-      allow create: if isAuthenticated() &&
-                       request.auth.uid == request.resource.data.fromUid &&
-                       request.resource.data.fromUid != request.resource.data.toUid &&
-                       request.resource.data.status == 'pending' &&
-                       isValidFriendRequest(request.resource.data);
-
-      // Status transitions:
-      // - If sender (request.auth.uid == resource.data.fromUid): can only cancel pending request
-      // - If recipient (request.auth.uid == resource.data.toUid): can accept or decline pending request
-      allow update: if isAuthenticated() &&
-                       (
-                         (request.auth.uid == resource.data.fromUid &&
-                          resource.data.status == 'pending' &&
-                          request.resource.data.status == 'cancelled') ||
-                         (request.auth.uid == resource.data.toUid &&
-                          resource.data.status == 'pending' &&
-                          request.resource.data.status in ['accepted', 'declined'])
-                       ) &&
-                       areImmutableFieldsUnchanged(['fromUid', 'toUid', 'createdAt']) &&
-                       isValidFriendRequest(request.resource.data);
-
-      // Either party can delete request
-      allow delete: if isAuthenticated() &&
-                       (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+      allow read, write: if false;
     }
 
-    // 4. Friendships
+    // 4. Friendships (deprecated - completely closed)
     match /friendships/{friendshipId} {
-      // Either friend can read their friendship
-      allow read: if isAuthenticated() &&
-                     (request.auth.uid == resource.data.user1Uid || request.auth.uid == resource.data.user2Uid);
-
-      // Either friend can create the friendship record
-      allow create: if isAuthenticated() &&
-                       (request.auth.uid == request.resource.data.user1Uid || request.auth.uid == request.resource.data.user2Uid) &&
-                       isValidFriendship(request.resource.data) &&
-                       (
-                         !('requestId' in request.resource.data) ||
-                         request.resource.data.requestId == null ||
-                         isValidFriendshipRequest(request.resource.data)
-                       );
-
-      // Friendships are immutable once established
-      allow update: if false;
-
-      // Either friend can remove friendship
-      allow delete: if isAuthenticated() &&
-                       (request.auth.uid == resource.data.user1Uid || request.auth.uid == resource.data.user2Uid);
+      allow read, write: if false;
     }
 
     // 5. Event Invitations

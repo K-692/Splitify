@@ -71,28 +71,28 @@ describe('Universal Item Modification, Deletion, Alert Notifications, and 30-Day
       )
     ).resolves.not.toThrow();
 
-    // Verify notifications were sent to creator and thirdUser with @rahul handle
+    // Verify notifications were sent to creator and thirdUser with Rahul Sharma name
     let rahulNotifs: AppNotification[] = [];
     dataService.subscribeNotifications(creatorUser.uid, (n) => {
       rahulNotifs = n;
     })();
     expect(rahulNotifs.length).toBeGreaterThan(0);
-    expect(rahulNotifs[0].senderName).toBe('@rahul');
-    expect(rahulNotifs[0].description).toContain('@rahul modified');
+    expect(rahulNotifs[0].senderName).toBe('Rahul Sharma');
+    expect(rahulNotifs[0].description).toContain('Rahul Sharma modified');
 
     // Any other member (Priya) can delete the item
     await expect(
       dataService.deleteItem(eventId, itemId, thirdUser, members)
     ).resolves.not.toThrow();
 
-    // Verify deletion notification sent with @priya handle
+    // Verify deletion notification sent with Priya Patel name
     let priyaNotifs: AppNotification[] = [];
     dataService.subscribeNotifications(otherUser.uid, (n) => {
       priyaNotifs = n;
     })();
     expect(priyaNotifs.length).toBeGreaterThan(0);
-    expect(priyaNotifs[0].senderName).toBe('@priya');
-    expect(priyaNotifs[0].description).toContain('@priya deleted');
+    expect(priyaNotifs[0].senderName).toBe('Priya Patel');
+    expect(priyaNotifs[0].description).toContain('Priya Patel deleted');
   });
 
   it('allows any member to convert items, edit categories, and delete categories', async () => {
@@ -199,7 +199,7 @@ describe('Universal Item Modification, Deletion, Alert Notifications, and 30-Day
     dataService.subscribeNotifications(creatorUser.uid, (n) => {
       notifs = n;
     })();
-    expect(notifs.some((n) => n.title === 'Items Deleted' && n.senderName === '@rahul')).toBe(true);
+    expect(notifs.some((n) => n.title === 'Items Deleted' && n.senderName === 'Rahul Sharma')).toBe(true);
   });
 
   it('automatically purges notifications older than 30 days', async () => {
@@ -258,6 +258,6 @@ describe('Universal Item Modification, Deletion, Alert Notifications, and 30-Day
     const link = await dataService.createInvitationLink(eventId, creatorUser);
 
     expect(link.membersCount).toBe(1);
-    expect(link.createdByName).toBe('@krish');
+    expect(link.createdByName).toBe('Krishnendu Pal');
   });
 });

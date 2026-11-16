@@ -4,8 +4,7 @@ import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
 import { EventItem, ExpenseEntry, EventMember, UserProfile } from '@/types';
 import { formatCurrency } from '@/utils/currency';
-import { isFriendRequestOnCooldown } from '@/utils/cooldown';
-import { UserPlus, Check, Clock, Calendar, PieChart, Info, Trash2, Edit2 } from 'lucide-react';
+import { Calendar, PieChart, Info, Trash2, Edit2 } from 'lucide-react';
 
 interface ItemInfoModalProps {
   isOpen: boolean;
@@ -16,9 +15,6 @@ interface ItemInfoModalProps {
   currency: string;
   currentUser: UserProfile;
   eventMembers: Record<string, EventMember>;
-  friendUids: Set<string>;
-  pendingSentFriendRequestUids: Set<string>;
-  onSendFriendRequest: (member: EventMember) => Promise<void>;
   onEdit?: () => void;
   onDelete?: () => void;
 }
@@ -32,9 +28,6 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
   currency,
   currentUser,
   eventMembers,
-  friendUids,
-  pendingSentFriendRequestUids,
-  onSendFriendRequest,
   onEdit,
   onDelete,
 }) => {
@@ -47,16 +40,14 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
   const participants = item.participants || [];
   const shares = item.shares || {};
 
-  const getMemberHandle = (member?: EventMember | null, fallbackUid?: string): string => {
+  const getMemberDisplayName = (member?: EventMember | null, fallbackUid?: string): string => {
     if (!member) {
-      if (!fallbackUid) return '@unknown';
-      return fallbackUid.startsWith('@') ? fallbackUid : `@${fallbackUid}`;
+      if (!fallbackUid) return 'Unknown';
+      return fallbackUid.replace(/^@/, '');
     }
-    if (member.username) {
-      return member.username.startsWith('@') ? member.username : `@${member.username}`;
-    }
-    const cleanName = member.displayName ? member.displayName.toLowerCase().replace(/\s+/g, '_') : 'user';
-    return `@${cleanName}`;
+    if (member.displayName) return member.displayName;
+    if (member.username) return member.username.replace(/^@/, '');
+    return 'Member';
   };
 
   const formatDate = (timestamp?: number, dateStr?: string, timeStr?: string) => {
@@ -80,44 +71,15 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
     return 'Recent';
   };
 
-  const renderFriendAction = (targetUid: string) => {
+  const renderMemberBadge = (targetUid: string) => {
     if (targetUid === currentUser.uid) {
-      return <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded-md">You</span>;
-    }
-    if (friendUids.has(targetUid)) {
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
-          <Check className="w-3 h-3" />
-          Friend
+        <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded-md">
+          You
         </span>
       );
     }
-    if (pendingSentFriendRequestUids.has(targetUid) || isFriendRequestOnCooldown(targetUid)) {
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/40">
-          <Clock className="w-3 h-3" />
-          Request Sent
-        </span>
-      );
-    }
-
-    const member = eventMembers[targetUid];
-    if (!member) return null;
-
-    return (
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={(e) => {
-          e.stopPropagation();
-          onSendFriendRequest(member);
-        }}
-        className="text-[11px] h-7 px-2"
-        leftIcon={<UserPlus className="w-3 h-3 text-teal-600 dark:text-teal-400" />}
-      >
-        Add Friend
-      </Button>
-    );
+    return null;
   };
 
   return (
@@ -193,21 +155,16 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
               <div className="flex items-center gap-2.5 min-w-0">
                 <Avatar
                   src={paidByMember?.photoURL}
-                  name={getMemberHandle(paidByMember, paidByUid)}
+                  name={getMemberDisplayName(paidByMember, paidByUid)}
                   size="sm"
                 />
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                    {getMemberHandle(paidByMember, paidByUid)}
+                    {getMemberDisplayName(paidByMember, paidByUid)}
                   </div>
-                  {paidByMember?.displayName && (
-                    <div className="text-[11px] text-slate-400 truncate">
-                      {paidByMember.displayName}
-                    </div>
-                  )}
                 </div>
               </div>
-              {paidByUid && renderFriendAction(paidByUid)}
+              {paidByUid && renderMemberBadge(paidByUid)}
             </div>
           </div>
         )}
@@ -239,18 +196,18 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
                     <div className="flex items-center gap-2.5 min-w-0">
                       <Avatar
                         src={member?.photoURL}
-                        name={getMemberHandle(member, uid)}
+                        name={getMemberDisplayName(member, uid)}
                         size="xs"
                       />
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          {getMemberHandle(member, uid)}
+                          {getMemberDisplayName(member, uid)}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {renderFriendAction(uid)}
+                      {renderMemberBadge(uid)}
                       <span className="text-xs font-extrabold text-slate-900 dark:text-white">
                         {formatCurrency(shareAmountMinor, currency)}
                       </span>
@@ -281,11 +238,7 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
             <span>
               Created by{' '}
               <span className="font-semibold text-slate-600 dark:text-slate-300">
-                {item.createdByName?.startsWith('@')
-                  ? item.createdByName
-                  : item.createdByName
-                  ? `@${item.createdByName.toLowerCase().replace(/\s+/g, '_')}`
-                  : '@user'}
+                {item.createdByName?.replace(/^@/, '') || 'User'}
               </span>
             </span>
           </div>

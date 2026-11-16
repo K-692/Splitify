@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db, googleProvider, isFirebaseConfigured } from './config';
 import { UserProfile } from '@/types';
+import { getFirstName } from '@/utils/name';
 
 const MOCK_STORAGE_KEY = 'splitify_mock_user';
 
@@ -54,12 +55,12 @@ export const authService = {
       } catch (err) {
         console.error('[Splitify] Error fetching user profile:', err);
         // Fallback profile if Firestore is momentarily unreachable
+        const fallbackName = getFirstName(fbUser.displayName || fbUser.email?.split('@')[0] || 'User');
         callback({
           uid: fbUser.uid,
-          displayName: fbUser.displayName || 'Splitify User',
+          displayName: fallbackName,
           email: fbUser.email || '',
           photoURL: fbUser.photoURL || undefined,
-          username: fbUser.email?.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${fbUser.uid.slice(0, 5)}`,
           createdAt: Date.now(),
         });
       }
@@ -79,24 +80,15 @@ export const authService = {
       return snap.data() as UserProfile;
     }
 
-    // Generate unique username default from email or display name
-    const rawUsername = (
-      fbUser.displayName ||
-      fbUser.email?.split('@')[0] ||
-      `user_${fbUser.uid.slice(0, 5)}`
-    )
-      .toLowerCase()
-      .replace(/[^a-z0-9_]/g, '')
-      .slice(0, 15);
-
-    const username = rawUsername || `user_${fbUser.uid.slice(0, 5)}`;
+    // Default to the first name from Gmail display name or email username
+    const rawName = fbUser.displayName || fbUser.email?.split('@')[0] || 'User';
+    const initialFirstName = getFirstName(rawName);
 
     const newProfile: UserProfile = {
       uid: fbUser.uid,
-      displayName: fbUser.displayName || 'Splitify User',
+      displayName: initialFirstName,
       email: fbUser.email || '',
       photoURL: fbUser.photoURL || undefined,
-      username,
       createdAt: Date.now(),
       preferences: {
         theme: 'system',
@@ -109,14 +101,6 @@ export const authService = {
       ...newProfile,
       serverCreatedAt: serverTimestamp(),
     });
-
-    // Also register username index
-    const usernameRef = doc(db, 'usernames', username);
-    try {
-      await setDoc(usernameRef, { uid: fbUser.uid, createdAt: Date.now() });
-    } catch {
-      // Ignored if duplicate
-    }
 
     return newProfile;
   },

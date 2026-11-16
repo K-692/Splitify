@@ -5,7 +5,6 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/Login/LoginPage';
 import { HomePage } from '@/pages/Home/HomePage';
 import { EventDetailsPage } from '@/pages/EventDetails/EventDetailsPage';
-import { FriendsPage } from '@/pages/Friends/FriendsPage';
 import { NotificationsPage } from '@/pages/Notifications/NotificationsPage';
 import { ProfilePage } from '@/pages/Profile/ProfilePage';
 import { JoinPage } from '@/pages/Join/JoinPage';
@@ -48,7 +47,7 @@ export const AppRouter: React.FC = () => {
           <Route index element={<HomePage />} />
           <Route path="events" element={<Navigate to="/" replace />} />
           <Route path="events/:eventId" element={<EventDetailsPage />} />
-          <Route path="friends" element={<FriendsPage />} />
+          <Route path="friends" element={<Navigate to="/" replace />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>

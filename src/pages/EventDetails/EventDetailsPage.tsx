@@ -8,8 +8,6 @@ import {
   ExpenseEntry,
   SettlementEntry,
   PaymentConfirmation,
-  Friendship,
-  FriendRequest,
   EventMember,
 } from '@/types';
 import { dataService } from '@/services/dataService';
@@ -22,8 +20,6 @@ import { sortItemsChronologicalDesc, sortEntriesChronologicalDesc } from '@/util
 import {
   isReminderOnCooldown,
   setReminderCooldown,
-  isFriendRequestOnCooldown,
-  setFriendRequestCooldown,
 } from '@/utils/cooldown';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
@@ -35,7 +31,6 @@ import { BulkDeleteModal } from '@/components/expenses/BulkDeleteModal';
 import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { SlotsModal } from '@/components/events/SlotsModal';
 import { ItemInfoModal } from '@/components/expenses/ItemInfoModal';
-import { FriendRequestActions } from '@/components/friends/FriendRequestActions';
 import {
   Plus,
   ChevronDown,
@@ -59,7 +54,6 @@ import {
   Clock,
   Check,
   Info,
-  UserPlus,
 } from 'lucide-react';
 
 export const EventDetailsPage: React.FC = () => {
@@ -74,11 +68,6 @@ export const EventDetailsPage: React.FC = () => {
   const [settlements, setSettlements] = useState<SettlementEntry[]>([]);
   const [paymentConfirmations, setPaymentConfirmations] = useState<PaymentConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Friends & friend request subscriptions
-  const [friends, setFriends] = useState<Friendship[]>([]);
-  const [sentFriendRequests, setSentFriendRequests] = useState<FriendRequest[]>([]);
-  const [receivedFriendRequests, setReceivedFriendRequests] = useState<FriendRequest[]>([]);
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<'hierarchy' | 'dashboard' | 'members'>('hierarchy');
@@ -140,52 +129,6 @@ export const EventDetailsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    const unsubFriends = dataService.subscribeFriends(user.uid, setFriends);
-    const unsubReqs = dataService.subscribeFriendRequests(user.uid, (received, sent) => {
-      setReceivedFriendRequests(received);
-      setSentFriendRequests(sent);
-    });
-    return () => {
-      unsubFriends();
-      unsubReqs();
-    };
-  }, [user]);
-
-  const friendUids = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of friends) {
-      if (f.user1Uid === user?.uid) set.add(f.user2Uid);
-      else if (f.user2Uid === user?.uid) set.add(f.user1Uid);
-    }
-    return set;
-  }, [friends, user?.uid]);
-  const pendingSentFriendRequestUids = useMemo(
-    () => new Set(sentFriendRequests.map((r) => r.toUid)),
-    [sentFriendRequests]
-  );
-
-  const handleSendFriendRequest = async (targetMember: EventMember) => {
-    if (!user || targetMember.uid === user.uid || isFriendRequestOnCooldown(targetMember.uid)) return;
-    try {
-      const toUser = {
-        uid: targetMember.uid,
-        displayName: targetMember.displayName,
-        username: targetMember.username || targetMember.displayName.toLowerCase().replace(/\s+/g, '_'),
-        photoURL: targetMember.photoURL,
-        email: '',
-        createdAt: targetMember.joinedAt || Date.now(),
-      };
-      await dataService.sendFriendRequest(user, toUser);
-      setFriendRequestCooldown(targetMember.uid);
-      setCooldownTick((t) => t + 1);
-      showToast(`Friend request sent to @${toUser.username}`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to send friend request');
-    }
-  };
-
-  useEffect(() => {
     if (!eventId) return;
 
     const unsubEvent = dataService.subscribeEvent(eventId, (ev) => {
@@ -242,14 +185,16 @@ export const EventDetailsPage: React.FC = () => {
 
   const getMemberHandle = (member?: EventMember | null, fallbackUid?: string): string => {
     if (!member) {
-      if (!fallbackUid) return '@unknown';
-      return fallbackUid.startsWith('@') ? fallbackUid : `@${fallbackUid}`;
+      if (!fallbackUid) return 'Unknown';
+      return fallbackUid.replace(/^@/, '');
+    }
+    if (member.displayName) {
+      return member.displayName;
     }
     if (member.username) {
-      return member.username.startsWith('@') ? member.username : `@${member.username}`;
+      return member.username.replace(/^@/, '');
     }
-    const cleanName = member.displayName ? member.displayName.toLowerCase().replace(/\s+/g, '_') : 'user';
-    return `@${cleanName}`;
+    return 'Member';
   };
 
   const getPersonDisplayName = (id: string): string => {
@@ -262,7 +207,7 @@ export const EventDetailsPage: React.FC = () => {
       }
       return `${slot.placeholderName} (Pending)`;
     }
-    return id.startsWith('@') ? id : `@${id}`;
+    return id.replace(/^@/, '');
   };
 
   const [isEditCategoryModalOpen, setIsEditCategoryModalOpen] = useState(false);
@@ -2171,7 +2116,7 @@ export const EventDetailsPage: React.FC = () => {
                 People ({Object.keys(event.members).length})
               </h3>
               <p className="text-xs text-slate-400">
-                All friends who have joined this event.
+                All members who have joined this event.
               </p>
             </div>
 
@@ -2211,11 +2156,6 @@ export const EventDetailsPage: React.FC = () => {
                       <span className="text-xs font-extrabold text-slate-800 dark:text-white truncate block">
                         {handle} {member.uid === user.uid ? '(You)' : ''}
                       </span>
-                      {member.displayName && (
-                        <span className="text-[11px] text-slate-400 truncate block">
-                          {member.displayName}
-                        </span>
-                      )}
                       <span className="text-[10px] text-teal-600 dark:text-teal-400 capitalize font-semibold">
                         {member.role}
                       </span>
@@ -2226,37 +2166,6 @@ export const EventDetailsPage: React.FC = () => {
                       )}
                     </div>
                   </div>
-
-                  {member.uid !== user.uid && (
-                    <div className="shrink-0">
-                      {friendUids.has(member.uid) ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
-                          <Check className="w-3 h-3" />
-                          Friend
-                        </span>
-                      ) : receivedFriendRequests.some((r) => r.fromUid === member.uid) ? (
-                        <FriendRequestActions
-                          requestId={receivedFriendRequests.find((r) => r.fromUid === member.uid)!.id}
-                          size="sm"
-                        />
-                      ) : (pendingSentFriendRequestUids.has(member.uid) || isFriendRequestOnCooldown(member.uid)) ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/40">
-                          <Clock className="w-3 h-3" />
-                          Request Sent
-                        </span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleSendFriendRequest(member)}
-                          className="text-[11px] h-7 px-2"
-                          leftIcon={<UserPlus className="w-3 h-3 text-teal-600 dark:text-teal-400" />}
-                        >
-                          Add Friend
-                        </Button>
-                      )}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -2559,9 +2468,6 @@ export const EventDetailsPage: React.FC = () => {
           currency={currency}
           currentUser={user}
           eventMembers={event.members}
-          friendUids={friendUids}
-          pendingSentFriendRequestUids={pendingSentFriendRequestUids}
-          onSendFriendRequest={handleSendFriendRequest}
           onEdit={() => {
             if (!activeInfoItem) return;
             if ('isCategory' in activeInfoItem && activeInfoItem.isCategory) {

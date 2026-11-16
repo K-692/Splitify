@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dataService } from '../src/services/dataService';
+import { authService } from '../src/services/firebase/authService';
 import { UserProfile } from '../src/types';
 
 // Mock isFirebaseConfigured to false for deterministic local offline unit tests
@@ -9,12 +10,11 @@ vi.mock('../src/services/firebase/config', () => ({
   isFirebaseConfigured: () => false,
 }));
 
-describe('Individual Person Slots & Handle Renaming', () => {
+describe('Individual Person Slots & Event Functionality', () => {
   const mockUser: UserProfile = {
     uid: 'user_test_1',
-    displayName: 'Krishnendu Pal',
+    displayName: 'Krishnendu',
     email: 'krish@example.com',
-    username: 'krish_orig',
     createdAt: Date.now(),
   };
 
@@ -22,14 +22,11 @@ describe('Individual Person Slots & Handle Renaming', () => {
     localStorage.clear();
   });
 
-  it('should validate and change username handle with case-insensitive normalization', async () => {
-    // Valid rename
-    const result = await dataService.changeUsernameHandle(mockUser, 'Krish_New');
-    expect(result).toBe('krish_new');
-
-    // Invalid format
-    await expect(dataService.changeUsernameHandle(mockUser, 'ab')).rejects.toThrow();
-    await expect(dataService.changeUsernameHandle(mockUser, 'invalid@handle!')).rejects.toThrow();
+  it('should support user profile display name updates', async () => {
+    localStorage.setItem('splitify_mock_user', JSON.stringify(mockUser));
+    await authService.updateProfile(mockUser.uid, { displayName: 'Krish' });
+    const stored = JSON.parse(localStorage.getItem('splitify_mock_user') || '{}');
+    expect(stored.displayName).toBe('Krish');
   });
 
   it('should create individual person slots during event creation', async () => {
@@ -104,9 +101,8 @@ describe('Individual Person Slots & Handle Renaming', () => {
     // Now Ayush joins Splitify and claims his spot
     const ayushUser: UserProfile = {
       uid: 'user_ayush_456',
-      displayName: 'Ayush Sharma',
+      displayName: 'Ayush',
       email: 'ayush@example.com',
-      username: 'ayush_s',
       createdAt: Date.now(),
     };
 
