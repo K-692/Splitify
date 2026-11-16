@@ -4,6 +4,7 @@ import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
 import { EventItem, ExpenseEntry, EventMember, UserProfile } from '@/types';
 import { formatCurrency } from '@/utils/currency';
+import { isFriendRequestOnCooldown } from '@/utils/cooldown';
 import { UserPlus, Check, Clock, Calendar, PieChart, Info, Trash2, Edit2 } from 'lucide-react';
 
 interface ItemInfoModalProps {
@@ -91,11 +92,11 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
         </span>
       );
     }
-    if (pendingSentFriendRequestUids.has(targetUid)) {
+    if (pendingSentFriendRequestUids.has(targetUid) || isFriendRequestOnCooldown(targetUid)) {
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md">
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/40">
           <Clock className="w-3 h-3" />
-          Request Sent
+          Request sent
         </span>
       );
     }

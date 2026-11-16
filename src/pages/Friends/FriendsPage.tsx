@@ -7,6 +7,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
 import { FriendRequestActions } from '@/components/friends/FriendRequestActions';
 import { getFirstName } from '@/utils/name';
+import { isFriendRequestOnCooldown, setFriendRequestCooldown } from '@/utils/cooldown';
 import {
   Users,
   UserPlus,
@@ -124,6 +125,7 @@ export const FriendsPage: React.FC = () => {
 
     try {
       await dataService.sendFriendRequest(user, targetUser);
+      setFriendRequestCooldown(targetUser.uid);
       setSuccessMessage(`Friend request sent to @${targetUser.username}!`);
       setSearchResult(null);
       setSearchUsername('');
@@ -271,9 +273,9 @@ export const FriendsPage: React.FC = () => {
                   <FriendRequestActions
                     requestId={receivedRequests.find((r) => r.fromUid === searchResult.uid)!.id}
                   />
-                ) : sentRequests.some((r) => r.toUid === searchResult.uid) ? (
-                  <span className="text-xs font-bold text-slate-400 flex items-center gap-1">
-                    <Clock className="w-4 h-4" /> Request Pending
+                ) : (sentRequests.some((r) => r.toUid === searchResult.uid) || isFriendRequestOnCooldown(searchResult.uid)) ? (
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 px-2.5 py-1 rounded-xl flex items-center gap-1">
+                    <Clock className="w-4 h-4" /> Request sent
                   </span>
                 ) : (
                   <Button

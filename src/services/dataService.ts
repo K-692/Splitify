@@ -3174,17 +3174,18 @@ export const dataService = {
       style: 'currency',
       currency: 'INR',
     });
+    const senderHandle = getActorHandle(sender);
 
     await dataService.createNotification({
       recipientUid: debtorUid,
       type: 'payment_reminder',
       senderUid: sender.uid,
-      senderName: sender.displayName,
+      senderName: senderHandle,
       senderPhotoURL: sender.photoURL,
       eventName,
       amountMinor,
       title: 'Payment Reminder',
-      description: `${sender.displayName} sent a friendly reminder for ${formattedAmount} unsettled in "${eventName}"`,
+      description: `${senderHandle} sent a friendly reminder for ${formattedAmount} unsettled in "${eventName}"`,
     });
   },
 };

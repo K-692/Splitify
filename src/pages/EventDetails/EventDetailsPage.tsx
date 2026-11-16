@@ -19,6 +19,12 @@ import { generatePlainTextExpenseReport } from '@/utils/exportReport';
 import { formatDisplayExpenseDate } from '@/utils/date';
 import { getEmojiForName } from '@/utils/emoji';
 import { sortItemsChronologicalDesc, sortEntriesChronologicalDesc } from '@/utils/sorting';
+import {
+  isReminderOnCooldown,
+  setReminderCooldown,
+  isFriendRequestOnCooldown,
+  setFriendRequestCooldown,
+} from '@/utils/cooldown';
 import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -121,6 +127,15 @@ export const EventDetailsPage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
   const [sendingReminders, setSendingReminders] = useState<Record<string, boolean>>({});
+  const [, setCooldownTick] = useState(0);
+
+  // Periodically refresh 5-minute cooldown timers
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCooldownTick((t) => t + 1);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -148,7 +163,7 @@ export const EventDetailsPage: React.FC = () => {
   );
 
   const handleSendFriendRequest = async (targetMember: EventMember) => {
-    if (!user || targetMember.uid === user.uid) return;
+    if (!user || targetMember.uid === user.uid || isFriendRequestOnCooldown(targetMember.uid)) return;
     try {
       const toUser = {
         uid: targetMember.uid,
@@ -159,6 +174,8 @@ export const EventDetailsPage: React.FC = () => {
         createdAt: targetMember.joinedAt || Date.now(),
       };
       await dataService.sendFriendRequest(user, toUser);
+      setFriendRequestCooldown(targetMember.uid);
+      setCooldownTick((t) => t + 1);
       showToast(`Friend request sent to @${toUser.username}`);
     } catch (err: any) {
       alert(err.message || 'Failed to send friend request');
@@ -706,10 +723,12 @@ export const EventDetailsPage: React.FC = () => {
   };
 
   const handleSendReminder = async (debtorUid: string, amountMinor: number) => {
-    if (!event || !user || sendingReminders[debtorUid]) return;
+    if (!event || !user || sendingReminders[debtorUid] || isReminderOnCooldown(debtorUid, event.id)) return;
     setSendingReminders((prev) => ({ ...prev, [debtorUid]: true }));
     try {
       await sendReminder(debtorUid, amountMinor, event.name);
+      setReminderCooldown(debtorUid, event.id);
+      setCooldownTick((t) => t + 1);
       showToast('Payment reminder sent! 🔔');
     } catch (err: any) {
       alert(err.message || 'Failed to send reminder');
@@ -1445,6 +1464,25 @@ export const EventDetailsPage: React.FC = () => {
                             );
                           })
                         )}
+
+                        {itemExpenses.length > 0 && (
+                          <div className="pt-2 flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setTargetCategoryItemId(item.id);
+                                setEditingExpense(null);
+                                setEditingItem(null);
+                                setIsExpenseModalOpen(true);
+                              }}
+                              className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5 rounded-xl border-dashed border-teal-300 dark:border-teal-700/60 hover:bg-teal-50 dark:hover:bg-teal-950/20"
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1" />
+                              Add Subitem
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1767,18 +1805,26 @@ export const EventDetailsPage: React.FC = () => {
                           )
                         )}
 
-                        {/* Creditor Action: Settle Now (Confirm Receipt) or Send Reminder */}
-                        {sug.toUid === user.uid && (
-                          pendingConf ? (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              onClick={() => handleOpenConfirmReceiptModal(pendingConf)}
-                              leftIcon={<Check className="w-3.5 h-3.5" />}
-                            >
-                              Settle Now
-                            </Button>
+                        {/* Creditor Action: Settle Now (Confirm Receipt) */}
+                        {sug.toUid === user.uid && pendingConf && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handleOpenConfirmReceiptModal(pendingConf)}
+                            leftIcon={<Check className="w-3.5 h-3.5" />}
+                          >
+                            Settle Now
+                          </Button>
+                        )}
+
+                        {/* Send Reminder: Anybody can do it. No permissions required. Prevents spamming for 5 mins */}
+                        {sug.fromUid !== user.uid && !pendingConf && (
+                          isReminderOnCooldown(sug.fromUid, event.id) ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
+                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              Reminder sent
+                            </span>
                           ) : (
                             <Button
                               variant="outline"
@@ -1881,11 +1927,13 @@ export const EventDetailsPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Member owes current user */}
-                    {owesYou > 0 && uid !== user.uid && (
+                    {/* Member owes money: anybody can remind them! No permissions required. Prevents spamming for 5 mins */}
+                    {summary.netBalanceMinor < 0 && uid !== user.uid && (
                       <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-                          Owes you {formatCurrency(owesYou, currency)}
+                          {owesYou > 0
+                            ? `Owes you ${formatCurrency(owesYou, currency)}`
+                            : `Owes ${formatCurrency(Math.abs(summary.netBalanceMinor), currency)}`}
                         </span>
                         {creditorPending ? (
                           <Button
@@ -1897,13 +1945,18 @@ export const EventDetailsPage: React.FC = () => {
                           >
                             Settle Now
                           </Button>
+                        ) : isReminderOnCooldown(uid, event.id) ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 px-2.5 py-1 rounded-xl">
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            Reminder sent
+                          </span>
                         ) : (
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={Boolean(sendingReminders[uid])}
                             isLoading={Boolean(sendingReminders[uid])}
-                            onClick={() => handleSendReminder(uid, owesYou)}
+                            onClick={() => handleSendReminder(uid, Math.abs(summary.netBalanceMinor))}
                             leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
                             className="text-xs py-1 px-2.5 rounded-xl border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/20 shadow-none"
                           >
@@ -2178,10 +2231,10 @@ export const EventDetailsPage: React.FC = () => {
                           <Check className="w-3 h-3" />
                           Friend
                         </span>
-                      ) : pendingSentFriendRequestUids.has(member.uid) ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md">
+                      ) : (pendingSentFriendRequestUids.has(member.uid) || isFriendRequestOnCooldown(member.uid)) ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/40">
                           <Clock className="w-3 h-3" />
-                          Sent
+                          Request sent
                         </span>
                       ) : (
                         <Button

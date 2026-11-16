@@ -72,9 +72,11 @@ Splitify adopts an **Item-First architecture** designed for speed, flexibility, 
 - **"Do you have subitems? ☑" Checkbox:**
   - **Unchecked (Standalone Expense):** Quick entry with description, amount, calendar date picker (`YYYY-MM-DD`), payer, split mode, and participants.
   - **Checked (Category with Subitems):** Step 1 prompts for Category Name -> Step 2 allows staging multiple subitems with dynamic total computation.
+- **Universal Subitem Creation (No Permissions Required):** Any member of an event can add subitems to any category directly, convert standalone items to categories, and edit entries without special host or creator permissions.
 - **Universal Collaborative Control:** Any member can edit or delete items, with automatic event-wide notifications informing all participants.
 - **Splitify Handle Identification:** Members are consistently identified by their Splitify handle (`@username`) across cards, optimal settlements, member totals, and notifications, rather than raw first names.
-- **Direct "+ Add Friend" Action:** Non-friends in events and item breakdowns display an "+ Add Friend" button, allowing members to connect with a single click.
+- **Direct "+ Add Friend" Action with 5-Minute Anti-Spam:** Non-friends in events and item breakdowns display an "+ Add Friend" button. Once clicked, the button updates immediately to `Request sent` and locks out spamming for 5 minutes.
+- **Payment Reminders with 5-Minute Anti-Spam:** Any member under an event can click `Send Reminder` to remind any debtor of unsettled dues. Once clicked, the button updates to `Reminder sent` and locks out spamming for 5 minutes.
 
 ### 6. 📋 Copy Expenses — Plain-Text Export
 - Prominent **"Copy Expenses"** button on event details.
