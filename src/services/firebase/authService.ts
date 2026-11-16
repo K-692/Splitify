@@ -21,6 +21,49 @@ import { UserProfile } from '@/types';
 import { getFirstName } from '@/utils/name';
 
 const MOCK_STORAGE_KEY = 'splitify_mock_user';
+const GOOGLE_WEB_CLIENT_ID = '268134159684-91qvrjihpdui4rrdsd8irfv4vq2u99a5.apps.googleusercontent.com';
+
+let isNativeGoogleAuthInitialized = false;
+let nativeGoogleAuthInitPromise: Promise<void> | null = null;
+
+/**
+ * Initializes the native Google authentication plugin once per application session.
+ * Guaranteed to be a no-op on the web platform.
+ */
+export async function initializeNativeGoogleAuth(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
+    return;
+  }
+  if (isNativeGoogleAuthInitialized) {
+    return;
+  }
+  if (nativeGoogleAuthInitPromise) {
+    return nativeGoogleAuthInitPromise;
+  }
+
+  nativeGoogleAuthInitPromise = (async () => {
+    try {
+      console.log('[Splitify Native Auth] Initializing GoogleAuth plugin with client ID:', GOOGLE_WEB_CLIENT_ID);
+      await GoogleAuth.initialize({
+        clientId: GOOGLE_WEB_CLIENT_ID,
+        scopes: ['profile', 'email'],
+        grantOfflineAccess: false,
+      });
+      isNativeGoogleAuthInitialized = true;
+      console.log('[Splitify Native Auth] GoogleAuth plugin initialized successfully.');
+    } catch (initErr: any) {
+      console.error('[Splitify Native Auth] GoogleAuth plugin initialization failed:', initErr);
+      isNativeGoogleAuthInitialized = false;
+      throw new Error(
+        `Failed to initialize native Google authentication: ${initErr?.message || String(initErr)}`
+      );
+    } finally {
+      nativeGoogleAuthInitPromise = null;
+    }
+  })();
+
+  return nativeGoogleAuthInitPromise;
+}
 
 export const authService = {
   /**
@@ -131,23 +174,44 @@ export const authService = {
     }
 
     if (Capacitor.isNativePlatform()) {
+      // 1. Ensure plugin is initialized before attempting sign-in
+      await initializeNativeGoogleAuth();
+
+      // 2. Invoke native Google Sign-In
+      console.log('[Splitify Native Auth] Invoking GoogleAuth.signIn()...');
+      let googleUser: any;
       try {
-        GoogleAuth.initialize({
-          clientId: '268134159684-91qvrjihpdui4rrdsd8irfv4vq2u99a5.apps.googleusercontent.com',
-          scopes: ['profile', 'email'],
-          grantOfflineAccess: false,
-        });
-      } catch {
-        // Initialization can be safely re-attempted
+        googleUser = await GoogleAuth.signIn();
+      } catch (signInErr: any) {
+        console.error('[Splitify Native Auth] GoogleAuth.signIn() caught error:', signInErr);
+        const code = String(signInErr?.code || signInErr?.message || '');
+        if (code === '12501' || signInErr?.message?.includes('canceled') || signInErr?.message?.includes('cancelled')) {
+          const cancelError: any = new Error('The user canceled the sign-in flow.');
+          cancelError.code = '12501';
+          cancelError.isCanceled = true;
+          throw cancelError;
+        }
+        throw signInErr;
       }
-      const googleUser = await GoogleAuth.signIn();
+
+      // 3. Verify that Google ID token is present
       const idToken = googleUser?.authentication?.idToken;
       if (!idToken) {
-        throw new Error('Google Sign-In did not return an authentication token.');
+        console.error('[Splitify Native Auth] Missing idToken in authentication payload:', googleUser);
+        throw new Error('Google Sign-In completed but no valid ID token was returned.');
       }
-      const credential = GoogleAuthProvider.credential(idToken);
-      await signInWithCredential(auth, credential);
-      return;
+
+      // 4. Exchange Google ID token for Firebase credential
+      console.log('[Splitify Native Auth] Exchanging Google ID token with Firebase Auth...');
+      try {
+        const credential = GoogleAuthProvider.credential(idToken);
+        const userCredential = await signInWithCredential(auth, credential);
+        console.log('[Splitify Native Auth] Firebase authentication succeeded for UID:', userCredential.user.uid);
+        return;
+      } catch (firebaseErr: any) {
+        console.error('[Splitify Native Auth] Firebase signInWithCredential failed:', firebaseErr);
+        throw new Error(`Firebase credential exchange failed: ${firebaseErr?.message || String(firebaseErr)}`);
+      }
     }
 
     try {

@@ -34,11 +34,29 @@ export const LoginPage: React.FC = () => {
       navigate(getDestination(), { replace: true });
     } catch (err: any) {
       console.error('[Splitify Auth Error]:', err);
+      // User cancelled sign-in -> smoothly return to login state without scary banner
+      if (err?.code === '12501' || err?.isCanceled || err?.message?.includes('canceled') || err?.message?.includes('cancelled')) {
+        setAuthError(null);
+        return;
+      }
+
       const msg = err?.message || String(err || '');
-      if (msg.includes('10:') || msg.includes('12500') || msg.toLowerCase().includes('developer error')) {
+      const code = String(err?.code || '');
+
+      if (
+        code === '10' ||
+        msg.includes('Something went wrong') ||
+        code === '12500' ||
+        msg.includes('12500') ||
+        msg.toLowerCase().includes('developer error')
+      ) {
         setAuthError(
-          'Google Sign-In configuration error (Code 10). Ensure the app SHA-1 fingerprint is added in Firebase Console and Support Email is configured.'
+          'Google Sign-In configuration error (Code 10: DEVELOPER_ERROR). The release SHA-1 fingerprint (3E:D3:B6:59:FA:74:97:C4:CA:B0:DA:04:CF:98:96:FF:49:2C:B9:DF) must be added under Android App (com.splitify.app) in Firebase Console, and a Support Email must be set.'
         );
+      } else if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('offline')) {
+        setAuthError('Unable to connect to Google or Firebase. Check your internet connection and retry.');
+      } else if (msg.toLowerCase().includes('firebase credential')) {
+        setAuthError('Google authentication succeeded, but Firebase could not complete the login.');
       } else {
         setAuthError(msg || 'Failed to authenticate with Google. Please try again.');
       }

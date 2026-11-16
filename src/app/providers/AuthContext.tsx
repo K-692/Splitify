@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { UserProfile } from '@/types';
-import { authService } from '@/services/firebase/authService';
+import { authService, initializeNativeGoogleAuth } from '@/services/firebase/authService';
 import { isFirebaseConfigured } from '@/services/firebase/config';
 import { initializeDemoDataIfEmpty } from '@/utils/seedDemoData';
 
@@ -22,6 +23,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     initializeDemoDataIfEmpty();
+
+    if (Capacitor.isNativePlatform()) {
+      initializeNativeGoogleAuth().catch((err) => {
+        console.warn('[Splitify] Native Google Auth pre-initialization notice:', err);
+      });
+    }
 
     const unsubscribe = authService.onAuthStateChange((currentUser) => {
       setUser(currentUser);
