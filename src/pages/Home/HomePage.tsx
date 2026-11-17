@@ -150,8 +150,8 @@ export const HomePage: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 max-w-5xl mx-auto">
       {/* Header: ONLY My Events with Create Event Button */}
-      <div className="flex items-center justify-between pt-2">
-        <div>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#203D62] dark:text-white tracking-tight">
             My Events
           </h1>
@@ -164,7 +164,7 @@ export const HomePage: React.FC = () => {
           variant="primary"
           size="md"
           onClick={() => setIsCreateModalOpen(true)}
-          className="shadow-md shadow-teal-500/20"
+          className="shadow-md shadow-teal-500/20 flex-shrink-0 whitespace-nowrap"
         >
           <Plus className="w-4 h-4 mr-1.5" />
           <span>Create Event</span>

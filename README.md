@@ -14,8 +14,8 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Live_App-k--692.github.io%2FSplitify-16AA88?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Live App" /></a>
-  <a href="https://github.com/K-692/Splitify/releases/download/v1.0.0/Splitify-v1.0.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.0.0_(Download)-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" /></a>
-  <img src="https://img.shields.io/badge/Release-v1.0.0-16AA88?style=for-the-badge" alt="Release" />
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.1.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.1.0_(Download)-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" /></a>
+  <img src="https://img.shields.io/badge/Release-v1.1.0-16AA88?style=for-the-badge" alt="Release" />
   <img src="https://img.shields.io/badge/React-19-203D62?style=for-the-badge&logo=react" alt="React 19" />
   <img src="https://img.shields.io/badge/Capacitor-6.2-119EFF?style=for-the-badge&logo=capacitor" alt="Capacitor" />
   <img src="https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />
@@ -32,19 +32,20 @@
 Get the official **Splitify Android Application** for seamless, on-the-go collaborative expense management:
 
 <p align="center">
-  <a href="https://github.com/K-692/Splitify/releases/download/v1.0.0/Splitify-v1.0.0.apk">
-    <img src="https://img.shields.io/badge/Download_APK-v1.0.0_(Direct_Download)-16AA88?style=for-the-badge&logo=android&logoColor=white" alt="Download Splitify Android APK" />
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.1.0.apk">
+    <img src="https://img.shields.io/badge/Download_APK-v1.1.0_(Direct_Download)-16AA88?style=for-the-badge&logo=android&logoColor=white" alt="Download Splitify Android APK" />
   </a>
 </p>
 
 | Attribute | Specification |
 |---|---|
-| **Version** | `v1.0.0` (Production Release) |
+| **Version** | `v1.1.0` (Production Release) |
 | **Minimum Compatibility** | Android 8.0 Oreo (API level 26) or higher |
 | **Target SDK** | Android 14 (API level 34) |
 | **Package Name** | `com.splitify.app` |
-| **Direct APK Link** | [**Splitify-v1.0.0.apk**](https://github.com/K-692/Splitify/releases/download/v1.0.0/Splitify-v1.0.0.apk) |
-| **GitHub Release** | [Splitify Android v1.0.0 Release Notes](https://github.com/K-692/Splitify/releases/tag/v1.0.0) |
+| **Direct APK Link** | [**Splitify-v1.1.0.apk**](https://github.com/K-692/Splitify/raw/main/Splitify-v1.1.0.apk) |
+| **APK in Repository** | [`Splitify-v1.1.0.apk`](./Splitify-v1.1.0.apk) |
+| **What's New in v1.1.0** | Receiver-side one-tap **Paid** (settles instantly), mobile layout fixes for exact-amount splits, event tabs and headers |
 
 ### 🚀 Android Native Highlights & Integration
 - **Shared Real-Time Backend:** Log in with your existing Google Account on both web and Android — all events, expenses, settlements, and member balances stay synchronized instantly in real time via Cloud Firestore.
@@ -56,7 +57,7 @@ Get the official **Splitify Android Application** for seamless, on-the-go collab
 - **Mobile-Optimized UX:** Full dark/light status bar theming, notch and safe-area compatibility, responsive modal adjustments for device keyboards, and high-DPI adaptive launcher icons.
 
 ### 📲 How to Install the APK on Your Android Device
-1. Download **`Splitify-v1.0.0.apk`** on your Android phone using the direct link above.
+1. Download **`Splitify-v1.1.0.apk`** on your Android phone using the direct link above.
 2. Tap the downloaded file in your browser or Downloads folder.
 3. If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **Allow from this source**.
 4. Tap **Install** and launch **Splitify**.
@@ -109,8 +110,9 @@ Splitify adopts an **Item-First architecture** designed for speed, flexibility, 
 - **Equal Split (Default):** Divides cost equally among selected participants or slots with deterministic integer minor-unit rounding (zero remainder loss).
 - **Exact Amount Split with Auto-Distribution:** When entering custom amounts, Splitify automatically and deterministically distributes the remaining unassigned balance in minor currency units (paise) across unedited participants, preventing mathematical discrepancies. Manual edits are preserved with one-click "Reset to Auto" controls.
 
-### 6. 💸 Two-Step Settlement Confirmation Flow
-- **Authoritative Ledger Integrity:** Debtor payments do not alter financial balances until verified by the creditor.
+### 6. 💸 Settlement Flow (Receiver One-Tap or Two-Step Confirmation)
+- **Receiver Marks `[ Paid ]` (Instant):** The person who is owed money can tap **Paid** next to a debtor in *Individual Member Totals*. Because the receiver is vouching for receipt, the settlement goes straight into the ledger — no confirmation step — and the debtor is notified.
+- **Authoritative Ledger Integrity:** Debtor-initiated payments do not alter financial balances until verified by the creditor.
 - **Step 1 (Debtor Marks `[ Paid ]`):** Debtor submits payment details (amount, method: UPI/Cash/Bank Transfer/Other, reference number, notes, date, and time). A pending record is created with status `awaiting_confirmation`. Outstanding debt remains strictly unchanged.
 - **Step 2 (Creditor Verification):** Creditor receives actionable alerts in the event dashboard and notifications with a **`[ Settle Now ]`** button.
   - **`[ Confirm Receipt ]`:** Instantly records an immutable completed settlement in `events/{eventId}/settlements`, marks the confirmation `confirmed`, and adjusts balances in real time with celebratory visual feedback.

@@ -655,14 +655,14 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                     key={person.id}
                     type="button"
                     onClick={() => setPaidBy(person.id)}
-                    className={`flex items-center gap-2 p-2 rounded-2xl border text-left transition-all ${
+                    className={`flex items-center gap-2 p-2 min-w-0 rounded-2xl border text-left transition-all ${
                       paidBy === person.id
                         ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750'
                     }`}
                   >
                     <Avatar src={person.photoURL} name={person.displayName} size="xs" />
-                    <div className="truncate">
+                    <div className="min-w-0 flex-1">
                       <span className="text-xs font-bold truncate block">
                         {person.displayName} {person.id === currentUser.uid ? '(You)' : ''}
                       </span>
@@ -724,7 +724,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 </button>
               </div>
 
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-60 overflow-y-auto overflow-x-hidden pr-1">
                 {assignablePeople.map((person) => {
                   const isSelected = participants.includes(person.id);
                   const equalShareMinor = isSelected && costMinor > 0
@@ -734,7 +734,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                   return (
                     <div
                       key={person.id}
-                      className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
+                      className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl border transition-all min-w-0 ${
                         isSelected
                           ? 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
                           : 'border-slate-100 dark:border-slate-800/60 opacity-60 bg-slate-50 dark:bg-slate-800/40'
@@ -743,10 +743,10 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                       <button
                         type="button"
                         onClick={() => toggleParticipant(person.id)}
-                        className="flex items-center gap-2.5 flex-1 text-left"
+                        className="flex items-center gap-2 flex-1 basis-28 min-w-0 text-left"
                       >
                         <div
-                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
+                          className={`w-5 h-5 flex-shrink-0 rounded-lg border flex items-center justify-center transition-colors ${
                             isSelected
                               ? 'bg-teal-500 border-teal-500 text-white'
                               : 'border-slate-300 dark:border-slate-600'
@@ -755,7 +755,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                           {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                         </div>
                         <Avatar src={person.photoURL} name={person.displayName} size="xs" />
-                        <div className="truncate">
+                        <div className="min-w-0 flex-1">
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
                             {person.displayName}
                           </span>
@@ -769,7 +769,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
                       {/* Share indicator or editable input */}
                       {isSelected && (
-                        <div className="flex-shrink-0 ml-2">
+                        <div className="flex-shrink-0 ml-auto">
                           {splitBy === 'equal' ? (
                             <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-xl">
                               {formatCurrency(equalShareMinor, event.currency)}
@@ -805,7 +805,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                     : ''
                                 }
                                 onChange={(e) => handleShareInputChange(person.id, e.target.value)}
-                                className={`w-24 px-2 py-1 text-right text-xs font-bold rounded-xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500 ${
+                                inputMode="decimal"
+                                className={`w-[4.75rem] px-2 py-1 text-right text-xs font-bold rounded-xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-1 focus:ring-teal-500 ${
                                   manualEditedUids[person.id]
                                     ? 'border-amber-400 dark:border-amber-600'
                                     : 'border-slate-200 dark:border-slate-700'

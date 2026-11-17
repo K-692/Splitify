@@ -42,7 +42,7 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
@@ -51,7 +51,7 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Modal Container */}
       <div
-        className={`relative w-full ${maxWidths[maxWidth]} bg-white dark:bg-[#15263C] rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-6 z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh] flex flex-col`}
+        className={`relative w-full ${maxWidths[maxWidth]} bg-white dark:bg-[#15263C] rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-4 sm:p-6 z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh] flex flex-col`}
       >
         {/* Header */}
         {(title || emoji) && (
@@ -79,7 +79,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {/* Content */}
-        <div className="overflow-y-auto flex-1 pr-1">{children}</div>
+        <div className="overflow-y-auto overflow-x-hidden flex-1 min-w-0 pr-1">{children}</div>
       </div>
     </div>
   );
