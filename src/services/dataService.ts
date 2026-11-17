@@ -2775,6 +2775,23 @@ export const dataService = {
     const userFirstName = getFirstName(user.displayName);
     const existingMember = event.members[user.uid];
 
+    // Joining requires an explicit choice: claim an existing person slot, or add a new name.
+    const trimmedNewName = (newSlotName || '').trim();
+    if (!existingMember && !slotId && !trimmedNewName) {
+      throw new Error('Please choose your name from the list, or add yourself as a new person.');
+    }
+    const assertNameNotOnList = (slotMap: Record<string, EventSlot>) => {
+      if (slotId || !trimmedNewName) return;
+      const wanted = trimmedNewName.toLowerCase();
+      const match = Object.values(slotMap).find(
+        (sl) => !sl.isClaimed && (sl.placeholderName || '').trim().toLowerCase() === wanted
+      );
+      if (match) {
+        throw new Error(`"${match.placeholderName}" is already on the list. Please select that name instead of adding a new one.`);
+      }
+    };
+    assertNameNotOnList(event.slots || {});
+
     const slots = { ...(event.slots || {}) };
     let assignedSlotId = slotId;
 
@@ -2791,10 +2808,10 @@ export const dataService = {
         claimedAt: Date.now(),
         updatedAt: Date.now(),
       };
-    } else if (newSlotName !== undefined) {
+    } else if (trimmedNewName) {
       // User creates a new slot to join
       const createdSlotId = 'slot_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-      const placeholder = newSlotName.trim() || userFirstName;
+      const placeholder = trimmedNewName || userFirstName;
       slots[createdSlotId] = {
         id: createdSlotId,
         eventId: event.id,
@@ -2874,6 +2891,7 @@ export const dataService = {
         throw new Error('The associated event has been deleted.');
       }
 
+      assertNameNotOnList(liveEvent.slots || {});
       const liveSlots = { ...(liveEvent.slots || {}) };
       let liveAssignedSlotId = slotId;
 
@@ -2893,9 +2911,9 @@ export const dataService = {
           claimedAt: Date.now(),
           updatedAt: Date.now(),
         };
-      } else if (newSlotName !== undefined) {
+      } else if (trimmedNewName) {
         const createdSlotId = 'slot_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-        const placeholder = newSlotName.trim() || userFirstName;
+        const placeholder = trimmedNewName || userFirstName;
         liveSlots[createdSlotId] = {
           id: createdSlotId,
           eventId: liveEvent.id,
@@ -2995,9 +3013,12 @@ export const dataService = {
     return newSlot;
   },
 
-  async deletePersonSlot(eventId: string, slotId: string): Promise<void> {
+  async deletePersonSlot(eventId: string, slotId: string, user?: UserProfile): Promise<void> {
     const event = await dataService.getEventById(eventId);
     if (!event) return;
+    if (user && event.hostUid !== user.uid) {
+      throw new Error('Only the event host can remove people.');
+    }
     const slot = event.slots?.[slotId];
     if (!slot) return;
     if (slot.isClaimed) {

@@ -2,7 +2,8 @@ import React from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { Avatar } from '@/components/common/Avatar';
-import { EventItem, ExpenseEntry, EventMember, UserProfile } from '@/types';
+import { EventItem, ExpenseEntry, EventMember, EventSlot, UserProfile } from '@/types';
+import { resolvePersonName, resolvePersonPhoto, isSamePerson } from '@/utils/people';
 import { formatCurrency } from '@/utils/currency';
 import { Calendar, PieChart, Info, Trash2, Edit2 } from 'lucide-react';
 
@@ -15,6 +16,7 @@ interface ItemInfoModalProps {
   currency: string;
   currentUser: UserProfile;
   eventMembers: Record<string, EventMember>;
+  eventSlots?: Record<string, EventSlot>;
   onEdit?: () => void;
   onDelete?: () => void;
 }
@@ -28,6 +30,7 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
   currency,
   currentUser,
   eventMembers,
+  eventSlots,
   onEdit,
   onDelete,
 }) => {
@@ -36,19 +39,11 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
   const isCategoryItem = 'isCategory' in item && item.isCategory;
   const costMinor = item.costMinor || 0;
   const paidByUid = item.paidBy || '';
-  const paidByMember = eventMembers[paidByUid];
   const participants = item.participants || [];
   const shares = item.shares || {};
 
-  const getMemberDisplayName = (member?: EventMember | null, fallbackUid?: string): string => {
-    if (!member) {
-      if (!fallbackUid) return 'Unknown';
-      return fallbackUid.replace(/^@/, '');
-    }
-    if (member.displayName) return member.displayName;
-    if (member.username) return member.username.replace(/^@/, '');
-    return 'Member';
-  };
+  const nameOf = (uid: string) => resolvePersonName(uid, eventMembers, eventSlots);
+  const photoOf = (uid: string) => resolvePersonPhoto(uid, eventMembers, eventSlots);
 
   const formatDate = (timestamp?: number, dateStr?: string, timeStr?: string) => {
     if (dateStr) {
@@ -72,7 +67,7 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
   };
 
   const renderMemberBadge = (targetUid: string) => {
-    if (targetUid === currentUser.uid) {
+    if (isSamePerson(targetUid, currentUser.uid, eventSlots)) {
       return (
         <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 px-2 py-0.5 rounded-md">
           You
@@ -154,13 +149,13 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Avatar
-                  src={paidByMember?.photoURL}
-                  name={getMemberDisplayName(paidByMember, paidByUid)}
+                  src={photoOf(paidByUid)}
+                  name={nameOf(paidByUid)}
                   size="sm"
                 />
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                    {getMemberDisplayName(paidByMember, paidByUid)}
+                    {nameOf(paidByUid)}
                   </div>
                 </div>
               </div>
@@ -183,7 +178,6 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
 
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
               {participants.map((uid) => {
-                const member = eventMembers[uid];
                 const shareAmountMinor = shares[uid] !== undefined
                   ? shares[uid]
                   : Math.round(costMinor / participants.length);
@@ -195,13 +189,13 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <Avatar
-                        src={member?.photoURL}
-                        name={getMemberDisplayName(member, uid)}
+                        src={photoOf(uid)}
+                        name={nameOf(uid)}
                         size="xs"
                       />
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          {getMemberDisplayName(member, uid)}
+                          {nameOf(uid)}
                         </div>
                       </div>
                     </div>

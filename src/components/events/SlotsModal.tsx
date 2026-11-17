@@ -20,9 +20,11 @@ interface SlotsModalProps {
   isOpen: boolean;
   onClose: () => void;
   event: SplitifyEvent;
+  /** Names of expenses/settlements that still reference a slot (deletion is blocked while non-empty) */
+  getSlotUsage?: (slotId: string) => string[];
 }
 
-export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }) => {
+export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event, getSlotUsage }) => {
   const { user } = useAuth();
   const [personName, setPersonName] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -54,9 +56,18 @@ export const SlotsModal: React.FC<SlotsModalProps> = ({ isOpen, onClose, event }
   };
 
   const handleDeleteSlot = async (slotId: string, slotName: string) => {
-    if (!confirm(`Remove placeholder for "${slotName}"?`)) return;
+    const usage = getSlotUsage ? getSlotUsage(slotId) : [];
+    if (usage.length > 0) {
+      alert(
+        `"${slotName}" can't be removed because they are part of: ${usage.slice(0, 5).join(', ')}${
+          usage.length > 5 ? ` and ${usage.length - 5} more` : ''
+        }.\n\nRemove them from those expenses first, then try again.`
+      );
+      return;
+    }
+    if (!confirm(`Remove "${slotName}" from this event?`)) return;
     try {
-      await dataService.deletePersonSlot(event.id, slotId);
+      await dataService.deletePersonSlot(event.id, slotId, user);
     } catch (err: any) {
       alert(err.message || 'Failed to delete slot');
     }

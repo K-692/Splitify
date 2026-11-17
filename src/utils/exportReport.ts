@@ -33,6 +33,8 @@ export function generatePlainTextExpenseReport(
     }
     if (event.slots && event.slots[id]) {
       const slot = event.slots[id];
+      const claimer = slot.isClaimed && slot.claimedByUid ? event.members?.[slot.claimedByUid] : undefined;
+      if (claimer) return getFirstName(claimer.displayName);
       const slotName = getFirstName(slot.placeholderName || 'Guest');
       return slot.isClaimed ? slotName : `${slotName} (Pending)`;
     }

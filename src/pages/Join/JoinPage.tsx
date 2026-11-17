@@ -15,7 +15,6 @@ import {
   ArrowRight,
   LogIn,
   UserPlus,
-  UserCheck,
 } from 'lucide-react';
 
 export const JoinPage: React.FC = () => {
@@ -30,9 +29,10 @@ export const JoinPage: React.FC = () => {
   const [event, setEvent] = useState<SplitifyEvent | null>(null);
 
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
-  const [joinMode, setJoinMode] = useState<'claim' | 'new_slot'>('claim');
+  const [joinMode, setJoinMode] = useState<'claim' | 'new_slot' | null>(null);
   const [customSlotName, setCustomSlotName] = useState<string>('');
   const [joining, setJoining] = useState(false);
+  const [joinHint, setJoinHint] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && !customSlotName) {
@@ -162,18 +162,22 @@ export const JoinPage: React.FC = () => {
 
   const handleJoin = async () => {
     if (!token || !user || !event) return;
+    if (!canJoin) {
+      setJoinHint('Select your name from the list, or add yourself as a new person.');
+      return;
+    }
     setJoining(true);
+    setJoinHint(null);
     try {
-      if (joinMode === 'claim' && selectedSlotId) {
+      if (joinMode === 'claim') {
         await dataService.joinEventByInvitationToken(token, user, selectedSlotId);
       } else {
-        const slotName = customSlotName.trim() || getFirstName(user.displayName);
-        await dataService.joinEventByInvitationToken(token, user, undefined, slotName);
+        await dataService.joinEventByInvitationToken(token, user, undefined, customSlotName.trim());
       }
       navigate(`/events/${event.id}`);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to join event.');
+      setJoinHint(err.message || 'Failed to join event.');
       setJoining(false);
     }
   };
@@ -211,7 +215,31 @@ export const JoinPage: React.FC = () => {
   }
 
   const isAlreadyMember = Boolean(user && event.members && event.members[user.uid]);
-  const slotsList: EventSlot[] = Object.values(event.slots || {});
+  const slotsList: EventSlot[] = Object.values(event.slots || {}).sort((a, b) =>
+    a.isClaimed === b.isClaimed
+      ? (a.placeholderName || '').localeCompare(b.placeholderName || '')
+      : a.isClaimed
+      ? 1
+      : -1
+  );
+  const availableSlots = slotsList.filter((sl) => !sl.isClaimed);
+  const claimedUids = new Set(slotsList.filter((sl) => sl.isClaimed).map((sl) => sl.claimedByUid));
+  const membersWithoutSlot = Object.values(event.members || {}).filter(
+    (m) => !claimedUids.has(m.uid) && !m.uid.startsWith('member_')
+  );
+  const trimmedNewName = customSlotName.trim();
+  const duplicateOfAvailable = trimmedNewName
+    ? availableSlots.find(
+        (sl) => (sl.placeholderName || '').trim().toLowerCase() === trimmedNewName.toLowerCase()
+      )
+    : undefined;
+  const canJoin =
+    (joinMode === 'claim' && Boolean(selectedSlotId)) ||
+    (joinMode === 'new_slot' && Boolean(trimmedNewName) && !duplicateOfAvailable);
+  const memberNameFor = (sl: EventSlot) => {
+    const m = sl.claimedByUid ? event.members?.[sl.claimedByUid] : undefined;
+    return m ? getFirstName(m.displayName) : sl.claimedByName || 'a member';
+  };
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center p-4">
@@ -260,35 +288,86 @@ export const JoinPage: React.FC = () => {
           </div>
         </div>
 
-        {/* People Joining Slots Section (Section 5.2) */}
-        {slotsList.length > 0 && (
-          <div className="bg-slate-50 dark:bg-[#0D1B2A]/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-800/80 mb-5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <span>👥</span> People Joining
-            </h3>
-            <div className="space-y-1.5">
-              {slotsList.map((slot) => (
-                <div
+        {/* Everyone in this event — shown before and after sign-in */}
+        <div className="mb-5">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+            {user && !isAlreadyMember ? 'Who are you in this event?' : 'People in this event'}
+          </h3>
+          {user && !isAlreadyMember && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5">
+              If your name is already listed, select it so the expenses already added for you are linked to your account.
+            </p>
+          )}
+          <div className="space-y-1.5">
+            {slotsList.map((slot) => {
+              const selectable = Boolean(user) && !isAlreadyMember && !slot.isClaimed;
+              const isSelected = joinMode === 'claim' && selectedSlotId === slot.id;
+              return (
+                <button
                   key={slot.id}
-                  className="flex items-center justify-between py-1.5 px-3 rounded-xl bg-white dark:bg-slate-800/70 border border-slate-100 dark:border-slate-800 text-xs font-semibold"
+                  type="button"
+                  disabled={!selectable}
+                  aria-pressed={isSelected}
+                  onClick={() => {
+                    setJoinMode('claim');
+                    setSelectedSlotId(slot.id);
+                    setJoinHint(null);
+                  }}
+                  className={`w-full flex items-center justify-between gap-2 p-3 rounded-2xl border text-left text-xs transition-all ${
+                    isSelected
+                      ? 'border-teal-500 bg-teal-500/10 ring-2 ring-teal-500'
+                      : slot.isClaimed
+                      ? 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 opacity-70 cursor-default'
+                      : selectable
+                      ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 hover:border-teal-400'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 cursor-default'
+                  }`}
                 >
-                  <span className="font-bold text-slate-800 dark:text-slate-200">
-                    {slot.placeholderName}
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? 'border-teal-500 bg-teal-500' : 'border-slate-300 dark:border-slate-600'
+                      } ${slot.isClaimed ? 'invisible' : ''}`}
+                    >
+                      {isSelected && <span className="w-2 h-2 rounded-full bg-white" />}
+                    </span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100 truncate">
+                      {slot.placeholderName}
+                    </span>
                   </span>
                   {slot.isClaimed ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-400">
-                      Claimed by {slot.claimedByName || 'Member'}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/70 dark:bg-slate-700 text-slate-500 dark:text-slate-300 flex-shrink-0 truncate max-w-[50%]">
+                      Joined as {memberNameFor(slot)}
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                      Available
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                      {isSelected ? 'This is me' : 'Available'}
                     </span>
                   )}
-                </div>
-              ))}
-            </div>
+                </button>
+              );
+            })}
+            {membersWithoutSlot.map((m) => (
+              <div
+                key={m.uid}
+                className="w-full flex items-center justify-between gap-2 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 opacity-70 text-xs"
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <Avatar src={m.photoURL} name={getFirstName(m.displayName)} size="xs" />
+                  <span className="font-bold text-slate-800 dark:text-slate-100 truncate">
+                    {getFirstName(m.displayName)}
+                  </span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/70 dark:bg-slate-700 text-slate-500 dark:text-slate-300 flex-shrink-0">
+                  {m.role === 'host' ? 'Host' : 'Joined'}
+                </span>
+              </div>
+            ))}
+            {slotsList.length === 0 && membersWithoutSlot.length === 0 && (
+              <p className="text-xs text-slate-400 italic">No people added yet.</p>
+            )}
           </div>
-        )}
+        </div>
 
         {/* Unauthenticated State */}
         {!user ? (
@@ -327,80 +406,64 @@ export const JoinPage: React.FC = () => {
         ) : (
           /* User is authenticated and ready to join */
           <div className="space-y-5">
-            {/* Slot Claiming or Create New Slot to Join */}
+            {/* Not on the list: add a new person */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 block">
-                How would you like to join?
-              </label>
+              <button
+                type="button"
+                aria-pressed={joinMode === 'new_slot'}
+                onClick={() => {
+                  setJoinMode('new_slot');
+                  setSelectedSlotId('');
+                  setJoinHint(null);
+                }}
+                className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between gap-2 text-xs font-bold ${
+                  joinMode === 'new_slot'
+                    ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500'
+                    : 'border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-400 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <UserPlus className="w-4 h-4 text-teal-500 flex-shrink-0" />
+                  <span className="truncate">Not listed? Add me as a new person</span>
+                </span>
+              </button>
 
-              <div className="space-y-2">
-                {slotsList
-                  .filter((s) => !s.isClaimed)
-                  .map((slot) => {
-                    const isSelected = joinMode === 'claim' && selectedSlotId === slot.id;
-                    return (
-                      <button
-                        key={slot.id}
-                        type="button"
-                        onClick={() => {
-                          setJoinMode('claim');
-                          setSelectedSlotId(slot.id);
-                        }}
-                        className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
-                          isSelected
-                            ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500 shadow-sm'
-                            : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <UserCheck className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                          <span>Claim spot for {slot.placeholderName}</span>
-                        </div>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-teal-500/15 text-teal-600 dark:text-teal-400">
-                          {isSelected ? 'Selected' : 'Claim Slot'}
-                        </span>
-                      </button>
-                    );
-                  })}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setJoinMode('new_slot');
-                    setSelectedSlotId('');
-                  }}
-                  className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between text-xs font-bold ${
-                    joinMode === 'new_slot'
-                      ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-200 ring-2 ring-teal-500 shadow-sm'
-                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <UserPlus className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                    <span>Create a New Slot to Join</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
-                    {joinMode === 'new_slot' ? 'Selected' : 'New Slot'}
-                  </span>
-                </button>
-              </div>
-
-              {/* Slot Name input if creating a new slot */}
               {joinMode === 'new_slot' && (
-                <div className="mt-3 p-3.5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-2 animate-in fade-in">
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block">
-                    Person / Slot Name for Event:
+                <div className="mt-2.5 p-3.5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-800/60 space-y-2">
+                  <label htmlFor="join-new-name" className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block">
+                    Your name in this event
                   </label>
                   <input
+                    id="join-new-name"
                     type="text"
                     value={customSlotName}
-                    onChange={(e) => setCustomSlotName(e.target.value)}
-                    placeholder="Enter your name (e.g. Rahul, Priya)..."
-                    className="w-full px-3.5 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                    onChange={(e) => {
+                      setCustomSlotName(e.target.value);
+                      setJoinHint(null);
+                    }}
+                    placeholder="e.g. Rahul"
+                    maxLength={40}
+                    className="w-full px-3.5 py-2.5 rounded-xl text-sm font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500 focus:outline-none"
                   />
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                    A dedicated person slot will be created under the event and shown in the event's people list.
-                  </p>
+                  {duplicateOfAvailable ? (
+                    <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                      "{duplicateOfAvailable.placeholderName}" is already on the list.{' '}
+                      <button
+                        type="button"
+                        className="underline font-bold"
+                        onClick={() => {
+                          setJoinMode('claim');
+                          setSelectedSlotId(duplicateOfAvailable.id);
+                        }}
+                      >
+                        Select it instead
+                      </button>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      A new person will be added to the event under this name.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -416,14 +479,26 @@ export const JoinPage: React.FC = () => {
               </div>
             </div>
 
+            {joinHint && (
+              <p role="alert" className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                {joinHint}
+              </p>
+            )}
+
             {/* Join Event button */}
             <Button
               variant="primary"
               onClick={handleJoin}
-              disabled={joining}
+              disabled={joining || !canJoin}
               className="w-full py-3.5 text-base shadow-xl shadow-teal-500/20"
             >
-              {joining ? 'Joining Event...' : 'Join Event'}
+              {joining
+                ? 'Joining Event...'
+                : joinMode === 'claim' && selectedSlotId
+                ? `Join as ${event.slots?.[selectedSlotId]?.placeholderName || 'selected person'}`
+                : joinMode === 'new_slot' && trimmedNewName && !duplicateOfAvailable
+                ? `Join as ${trimmedNewName}`
+                : 'Select your name to join'}
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
