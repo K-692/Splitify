@@ -1661,6 +1661,95 @@ export const dataService = {
     });
   },
 
+  /**
+   * Creditor-initiated settlement: the person who is owed money marks the debt as
+   * paid. Since the receiver is vouching for receipt, it goes straight into the
+   * ledger without any confirmation step.
+   */
+  async markPaymentReceivedByCreditor(
+    params: {
+      eventId: string;
+      eventName: string;
+      debtorUid: string;
+      debtorName: string;
+      amountMinor: number;
+      currency?: string;
+    },
+    creditorUser: UserProfile
+  ): Promise<string> {
+    const { eventId, eventName, debtorUid, debtorName, amountMinor } = params;
+    if (debtorUid === creditorUser.uid) {
+      throw new Error('You cannot settle a payment with yourself.');
+    }
+    if (!(amountMinor > 0)) {
+      throw new Error('Payment amount must be greater than zero.');
+    }
+
+    const settlementsItemId = await dataService.getOrCreateSettlementsItem(eventId);
+    const now = Date.now();
+    const d = new Date(now);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const paidDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const paidTime = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    const newSettlement: Omit<SettlementEntry, 'id'> = {
+      eventId,
+      itemId: settlementsItemId,
+      payerUid: debtorUid,
+      payerName: debtorName,
+      receiverUid: creditorUser.uid,
+      receiverName: creditorUser.displayName,
+      amountMinor,
+      paymentMethod: 'Marked by receiver',
+      paidDate,
+      paidTime,
+      occurredAt: now,
+      recordedBy: creditorUser.uid,
+      recordedByName: creditorUser.displayName,
+      createdAt: now,
+      formattedTimestamp: formatAuditTimestamp(now),
+      confirmedAt: now,
+      confirmedByUid: creditorUser.uid,
+      status: 'completed',
+      note: `Marked as received by ${creditorUser.displayName}`,
+    };
+
+    let settlementId: string;
+    if (!isFirebaseConfigured() || !db) {
+      settlementId = 'set_' + now;
+      const settlements = getLocal<SettlementEntry[]>(`settlements_${eventId}`, []);
+      settlements.unshift({ ...newSettlement, id: settlementId });
+      setLocal(`settlements_${eventId}`, settlements);
+    } else {
+      const ref = doc(collection(db, 'events', eventId, 'settlements'));
+      settlementId = ref.id;
+      await setDoc(ref, sanitizeForFirestore({ ...newSettlement, id: settlementId }));
+    }
+
+    const formattedAmount = (amountMinor / 100).toFixed(0);
+    const symbol = params.currency && params.currency !== 'INR' ? '$' : '₹';
+    try {
+      await dataService.createNotification({
+        recipientUid: debtorUid,
+        type: 'settlement_recorded',
+        senderUid: creditorUser.uid,
+        senderName: creditorUser.displayName,
+        senderPhotoURL: creditorUser.photoURL,
+        eventId,
+        eventName,
+        amountMinor,
+        settlementId,
+        title: 'Payment Settled',
+        description: `${creditorUser.displayName} marked your payment of ${symbol}${formattedAmount} as received in ${eventName}.`,
+      });
+    } catch (err) {
+      // Debtor may be an unclaimed slot (no real account) — settlement still stands.
+      console.warn('Settlement notification skipped:', err);
+    }
+
+    return settlementId;
+  },
+
   async recordSettlement(
     params: {
       eventId: string;

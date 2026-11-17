@@ -97,6 +97,7 @@ export const EventDetailsPage: React.FC = () => {
 
   // Two-Step Settlement Modals
   const [isPaymentDetailsModalOpen, setIsPaymentDetailsModalOpen] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState<Record<string, boolean>>({});
   const [activeDebtorPayment, setActiveDebtorPayment] = useState<{
     creditorUid: string;
     creditorName: string;
@@ -670,6 +671,29 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
+  const handleCreditorMarkPaid = async (debtorUid: string, debtorName: string, amountMinor: number) => {
+    if (!event || !user || markingPaid[debtorUid] || amountMinor <= 0) return;
+    setMarkingPaid((prev) => ({ ...prev, [debtorUid]: true }));
+    try {
+      await dataService.markPaymentReceivedByCreditor(
+        {
+          eventId: event.id,
+          eventName: event.name,
+          debtorUid,
+          debtorName,
+          amountMinor,
+          currency: event.currency,
+        },
+        user
+      );
+      showToast(`Marked ${formatCurrency(amountMinor, event.currency || 'INR')} from ${debtorName} as received 💸`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to record payment');
+    } finally {
+      setMarkingPaid((prev) => ({ ...prev, [debtorUid]: false }));
+    }
+  };
+
   const handleSendReminder = async (debtorUid: string, amountMinor: number) => {
     if (!event || !user || sendingReminders[debtorUid] || isReminderOnCooldown(debtorUid, event.id)) return;
     setSendingReminders((prev) => ({ ...prev, [debtorUid]: true }));
@@ -1011,12 +1035,12 @@ export const EventDetailsPage: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
+      <div className="grid grid-cols-3 gap-1.5 sm:flex sm:items-center sm:gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
         <button
           onClick={() => setActiveTab('hierarchy')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all whitespace-nowrap ${
+          className={`px-2 sm:px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm transition-all justify-center text-center whitespace-nowrap ${
             activeTab === 'hierarchy'
-              ? 'bg-[#203D62] text-white shadow-md'
+              ? 'bg-[#203D62] dark:bg-teal-600 text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -1024,9 +1048,9 @@ export const EventDetailsPage: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-2 sm:px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm transition-all justify-center text-center flex items-center gap-1.5 whitespace-nowrap ${
             activeTab === 'dashboard'
-              ? 'bg-[#203D62] text-white shadow-md'
+              ? 'bg-[#203D62] dark:bg-teal-600 text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -1037,9 +1061,9 @@ export const EventDetailsPage: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('members')}
-          className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all whitespace-nowrap ${
+          className={`px-2 sm:px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm transition-all justify-center text-center whitespace-nowrap ${
             activeTab === 'members'
-              ? 'bg-[#203D62] text-white shadow-md'
+              ? 'bg-[#203D62] dark:bg-teal-600 text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -1772,8 +1796,8 @@ export const EventDetailsPage: React.FC = () => {
 
                     {/* Member owes money: anybody can remind them! No permissions required. Prevents spamming for 5 mins */}
                     {summary.netBalanceMinor < 0 && uid !== user.uid && (
-                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 min-w-0">
                           {owesYou > 0
                             ? `Owes you ${formatCurrency(owesYou, currency)}`
                             : `Owes ${formatCurrency(Math.abs(summary.netBalanceMinor), currency)}`}
@@ -1788,35 +1812,53 @@ export const EventDetailsPage: React.FC = () => {
                           >
                             Settle Now
                           </Button>
-                        ) : isReminderOnCooldown(uid, event.id) ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 px-2.5 py-1 rounded-xl">
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
-                            Reminder sent
-                          </span>
                         ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={Boolean(sendingReminders[uid])}
-                            isLoading={Boolean(sendingReminders[uid])}
-                            onClick={() => handleSendReminder(uid, Math.abs(summary.netBalanceMinor))}
-                            leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
-                            className="text-xs py-1 px-2.5 rounded-xl border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/20 shadow-none"
-                          >
-                            Send Reminder
-                          </Button>
+                          <div className="flex flex-wrap items-center justify-end gap-2 ml-auto">
+                            {owesYou > 0 && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={Boolean(markingPaid[uid])}
+                                isLoading={Boolean(markingPaid[uid])}
+                                onClick={() => handleCreditorMarkPaid(uid, displayName, owesYou)}
+                                leftIcon={<Check className="w-3.5 h-3.5" />}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1 px-2.5 rounded-xl"
+                                title="Record that you received this payment (no confirmation needed)"
+                              >
+                                Paid
+                              </Button>
+                            )}
+                            {isReminderOnCooldown(uid, event.id) ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 px-2.5 py-1 rounded-xl whitespace-nowrap">
+                                <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                Reminder sent
+                              </span>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={Boolean(sendingReminders[uid])}
+                                isLoading={Boolean(sendingReminders[uid])}
+                                onClick={() => handleSendReminder(uid, Math.abs(summary.netBalanceMinor))}
+                                leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
+                                className="text-xs py-1 px-2.5 rounded-xl border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/20 shadow-none"
+                              >
+                                Remind
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
 
                     {/* Current user owes member */}
                     {youOwe > 0 && uid !== user.uid && (
-                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 min-w-0">
                           You owe {formatCurrency(youOwe, currency)}
                         </span>
                         {debtorPending ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-lg">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-lg ml-auto text-right">
                             <Clock className="w-3 h-3" />
                             Awaiting Confirmation ({formatCurrency(debtorPending.amountMinor, currency)})
                           </span>

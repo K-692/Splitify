@@ -67,7 +67,7 @@ export const LoginPage: React.FC = () => {
     Boolean(authError && authError.toLowerCase().includes('unauthorized-domain'));
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[#F8FAFC] dark:bg-[#0D1B2A]">
       <NetworkStatusBanner />
       <div className="w-full max-w-md bg-white dark:bg-[#15263C] rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8 sm:p-10 transition-all text-center">
         {/* Official Splitify Logo (No circular frame) */}
