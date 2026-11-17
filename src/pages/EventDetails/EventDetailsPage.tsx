@@ -12,6 +12,8 @@ import {
 } from '@/types';
 import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
+import { buildIndividualLedger } from '@/domain/calculations/individualLedger';
+import { IndividualExpensesTab } from '@/components/events/IndividualExpensesTab';
 import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
 import { formatDisplayExpenseDate } from '@/utils/date';
@@ -70,7 +72,7 @@ export const EventDetailsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Active view tab
-  const [activeTab, setActiveTab] = useState<'hierarchy' | 'dashboard' | 'members'>('hierarchy');
+  const [activeTab, setActiveTab] = useState<'hierarchy' | 'dashboard' | 'individual' | 'members'>('hierarchy');
 
   // Accordion open states for items (all open by default)
   const [collapsedItems, setCollapsedItems] = useState<Record<string, boolean>>({});
@@ -183,6 +185,11 @@ export const EventDetailsPage: React.FC = () => {
       event.slots || {}
     );
   }, [event, expenses, settlements, user?.uid, items]);
+
+  const individualLedger = useMemo(() => {
+    if (!event) return [];
+    return buildIndividualLedger(items, expenses, settlements, event.slots || {});
+  }, [event, items, expenses, settlements]);
 
   const getMemberHandle = (member?: EventMember | null, fallbackUid?: string): string => {
     if (!member) {
@@ -1035,7 +1042,7 @@ export const EventDetailsPage: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="grid grid-cols-3 gap-1.5 sm:flex sm:items-center sm:gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
         <button
           onClick={() => setActiveTab('hierarchy')}
           className={`px-2 sm:px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm transition-all justify-center text-center whitespace-nowrap ${
@@ -1058,6 +1065,16 @@ export const EventDetailsPage: React.FC = () => {
           {financialOverview && financialOverview.settlementSuggestions.length > 0 && (
             <span className="w-2 h-2 rounded-full bg-[#F36B2C]" />
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('individual')}
+          className={`px-2 sm:px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm transition-all justify-center text-center whitespace-nowrap ${
+            activeTab === 'individual'
+              ? 'bg-[#203D62] dark:bg-teal-600 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          Individual Expenses
         </button>
         <button
           onClick={() => setActiveTab('members')}
@@ -2040,6 +2057,20 @@ export const EventDetailsPage: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* TAB: INDIVIDUAL EXPENSES */}
+      {/* ==================================================== */}
+      {activeTab === 'individual' && (
+        <IndividualExpensesTab
+          lines={individualLedger}
+          personUids={Object.keys(financialOverview?.memberSummaries || event.members)}
+          currentUserUid={user.uid}
+          currency={currency}
+          getName={(uid) => getPersonDisplayName(uid) || financialOverview?.memberSummaries[uid]?.displayName || 'Member'}
+          getPhotoURL={(uid) => event.members[uid]?.photoURL}
+        />
       )}
 
       {/* ==================================================== */}
