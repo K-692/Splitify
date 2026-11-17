@@ -87,16 +87,16 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
       <div className="space-y-5 text-slate-800 dark:text-slate-100">
         {/* Header Card */}
         <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/70 dark:from-slate-800/80 dark:to-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <span className="text-3xl p-2.5 rounded-xl bg-white dark:bg-slate-700 shadow-sm border border-slate-200/60 dark:border-slate-600/60 shrink-0">
               {item.emoji || '📦'}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
                 {item.name}
               </h3>
               {categoryName ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
                   <span>{categoryEmoji || '📁'}</span>
                   <span>Category: {categoryName}</span>
                 </p>
@@ -112,11 +112,11 @@ export const ItemInfoModal: React.FC<ItemInfoModalProps> = ({
             </div>
           </div>
 
-          <div className="text-right shrink-0">
+          <div className="text-right shrink-0 pl-2">
             <span className="text-xs uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 block">
               Total Amount
             </span>
-            <span className="text-xl font-extrabold text-teal-600 dark:text-teal-400">
+            <span className="text-xl font-extrabold text-teal-600 dark:text-teal-400 whitespace-nowrap">
               {formatCurrency(costMinor, currency)}
             </span>
           </div>

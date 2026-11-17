@@ -245,35 +245,35 @@ export const HomePage: React.FC = () => {
                   onClick={() => navigate(`/events/${ev.id}`)}
                   className="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800/80 cursor-pointer space-y-2.5"
                 >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400 font-semibold">Total Event Expense:</span>
-                    <span className="font-extrabold text-slate-900 dark:text-white">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-400 font-semibold truncate">Total Event Expense:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                       {formatCurrency(totalMinor, ev.currency)}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400 font-semibold">Your Share:</span>
-                    <span className="font-bold text-slate-700 dark:text-slate-300">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-400 font-semibold truncate">Your Share:</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                       {formatCurrency(yourShare, ev.currency)}
                     </span>
                   </div>
 
                   {/* Balance Badge */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-slate-400 font-medium">Your Balance:</span>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[11px] text-slate-400 font-medium truncate">Your Balance:</span>
                     {netBalance > 0 ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-teal-500/15 text-teal-600 dark:text-teal-400">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-teal-500/15 text-teal-600 dark:text-teal-400 whitespace-nowrap flex-shrink-0">
                         <TrendingUp className="w-3.5 h-3.5" />
                         +{formatCurrency(netBalance, ev.currency)} (you get)
                       </span>
                     ) : netBalance < 0 ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-[#F36B2C]/15 text-[#F36B2C]">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-[#F36B2C]/15 text-[#F36B2C] whitespace-nowrap flex-shrink-0">
                         <TrendingDown className="w-3.5 h-3.5" />
                         -{formatCurrency(Math.abs(netBalance), ev.currency)} (you owe)
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 whitespace-nowrap flex-shrink-0">
                         <CheckCircle2 className="w-3.5 h-3.5 text-teal-500" />
                         Settled
                       </span>

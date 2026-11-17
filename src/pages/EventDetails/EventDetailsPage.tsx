@@ -1192,63 +1192,70 @@ export const EventDetailsPage: React.FC = () => {
                     className="bg-white dark:bg-[#15263C] rounded-3xl border border-teal-500/30 dark:border-teal-500/20 shadow-sm overflow-hidden transition-all"
                   >
                     {/* Category Header */}
-                    <div className="p-4 sm:p-5 flex items-center justify-between gap-3 bg-teal-500/5 dark:bg-teal-950/20 border-b border-teal-500/10 select-none">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleItemCollapse(item.id)}
-                          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                        >
-                          {isCollapsed ? (
-                            <ChevronRight className="w-5 h-5" />
-                          ) : (
-                            <ChevronDown className="w-5 h-5" />
-                          )}
-                        </button>
+                    <div className="p-3.5 sm:p-5 bg-teal-500/5 dark:bg-teal-950/20 border-b border-teal-500/10 select-none">
+                      {/* Top Row: Category Identity (Left) & Total Amount (Right) */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleItemCollapse(item.id)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex-shrink-0"
+                            aria-label={isCollapsed ? 'Expand category' : 'Collapse category'}
+                          >
+                            {isCollapsed ? (
+                              <ChevronRight className="w-5 h-5" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5" />
+                            )}
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSelectItem(item.id)}
-                          className="text-slate-400 hover:text-teal-600 transition-colors"
-                          title="Select all subitems in this category"
-                        >
-                          {allItemExpensesSelected || selectedItemIds[item.id] ? (
-                            <CheckSquare className="w-4 h-4 text-teal-500" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSelectItem(item.id)}
+                            className="text-slate-400 hover:text-teal-600 transition-colors flex-shrink-0"
+                            title="Select all subitems in this category"
+                            aria-label="Select all subitems in this category"
+                          >
+                            {allItemExpensesSelected || selectedItemIds[item.id] ? (
+                              <CheckSquare className="w-4 h-4 text-teal-500" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
 
-                        <span className="text-2xl flex-shrink-0">{item.emoji}</span>
+                          <span className="text-2xl flex-shrink-0">{item.emoji}</span>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-600 dark:text-teal-400">
-                              Category
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3
+                                onClick={() => handleToggleItemCollapse(item.id)}
+                                className="text-sm sm:text-base md:text-lg font-black text-[#203D62] dark:text-white truncate cursor-pointer hover:text-teal-600 transition-colors"
+                              >
+                                {item.name}
+                              </h3>
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-600 dark:text-teal-400 flex-shrink-0">
+                                Category
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+                              {itemExpenses.length} {itemExpenses.length === 1 ? 'subitem' : 'subitems'}
                             </span>
-                            <h3
-                              onClick={() => handleToggleItemCollapse(item.id)}
-                              className="text-base sm:text-lg font-black text-[#203D62] dark:text-white truncate cursor-pointer hover:text-teal-600"
-                            >
-                              {item.name}
-                            </h3>
                           </div>
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            {itemExpenses.length} {itemExpenses.length === 1 ? 'subitem' : 'subitems'}
+                        </div>
+
+                        {/* Total Amount Display */}
+                        <div className="text-right flex-shrink-0 pl-2">
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block uppercase tracking-wider">
+                            Total
+                          </span>
+                          <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white whitespace-nowrap">
+                            {formatCurrency(itemTotalMinor, currency)}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2.5 flex-shrink-0">
-                        <div className="text-right mr-1">
-                          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 block text-[10px] uppercase">
-                            Total
-                          </span>
-                          <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                            {formatCurrency(itemTotalMinor, currency)}
-                          </span>
-                        </div>
-
+                      {/* Actions Row: Add Subitem + Action Icons */}
+                      <div className="flex items-center justify-between sm:justify-end gap-2 pt-3 mt-3 border-t border-teal-500/10">
                         <Button
                           variant="teal"
                           size="sm"
@@ -1258,46 +1265,51 @@ export const EventDetailsPage: React.FC = () => {
                             setEditingItem(null);
                             setIsExpenseModalOpen(true);
                           }}
-                          className="!py-1 !px-2.5 text-xs font-bold"
+                          className="!py-1.5 !px-3 text-xs font-bold shadow-sm"
                         >
                           <Plus className="w-3.5 h-3.5 mr-1" />
                           Add Subitem
                         </Button>
 
-                        {/* Info Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveInfoItem(item);
-                            setActiveInfoCategoryName(undefined);
-                            setActiveInfoCategoryEmoji(undefined);
-                            setIsItemInfoModalOpen(true);
-                          }}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          title="Category info"
-                        >
-                          <Info className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1 sm:gap-1.5">
+                          {/* Info Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveInfoItem(item);
+                              setActiveInfoCategoryName(undefined);
+                              setActiveInfoCategoryEmoji(undefined);
+                              setIsItemInfoModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Category info"
+                            aria-label="Category info"
+                          >
+                            <Info className="w-4 h-4" />
+                          </button>
 
-                        {/* Edit Category */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditCategory(item)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          title="Edit Category"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                          {/* Edit Category */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditCategory(item)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Edit Category"
+                            aria-label="Edit Category"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
 
-                        {/* Delete Category */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(item)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
-                          title="Delete Category"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                          {/* Delete Category */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                            title="Delete Category"
+                            aria-label="Delete Category"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -1306,7 +1318,7 @@ export const EventDetailsPage: React.FC = () => {
                       <div className="p-3 sm:p-4 space-y-2.5 bg-slate-50/40 dark:bg-slate-900/40">
                         {itemExpenses.length === 0 ? (
                           <div className="text-center py-6 text-xs text-slate-400">
-                            No subitems in this category yet. Click "Add Subitem" above!
+                            No subitems in this category yet. Click &quot;Add Subitem&quot; above!
                           </div>
                         ) : (
                           itemExpenses.map((expense) => {
@@ -1321,12 +1333,14 @@ export const EventDetailsPage: React.FC = () => {
                                     : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#15263C]'
                                 }`}
                               >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  {/* Left: Checkbox, Emoji, Title & Metadata */}
+                                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
                                     <button
                                       type="button"
                                       onClick={() => handleToggleSelectExpense(expense.id)}
-                                      className="text-slate-400 hover:text-teal-600 transition-colors"
+                                      className="text-slate-400 hover:text-teal-600 transition-colors mt-0.5 flex-shrink-0"
+                                      aria-label="Select subitem"
                                     >
                                       {isSelected ? (
                                         <CheckSquare className="w-4 h-4 text-teal-500" />
@@ -1335,16 +1349,16 @@ export const EventDetailsPage: React.FC = () => {
                                       )}
                                     </button>
 
-                                    <span className="text-xl flex-shrink-0">{expense.emoji}</span>
+                                    <span className="text-xl flex-shrink-0 mt-0.5">{expense.emoji}</span>
 
                                     <div className="min-w-0 flex-1">
                                       <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                                         {expense.name}
                                       </h4>
-                                      <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400 flex-wrap">
+                                      <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-400 flex-wrap">
                                         <span>
                                           Paid by{' '}
-                                          <strong className="text-slate-700 dark:text-slate-200">
+                                          <strong className="text-slate-700 dark:text-slate-200 font-semibold">
                                             {getPersonDisplayName(expense.paidBy) || (expense.createdByName?.startsWith('@') ? expense.createdByName : `@${(expense.createdByName || 'unknown').toLowerCase().replace(/\s+/g, '_')}`)}
                                           </strong>
                                         </span>
@@ -1362,50 +1376,56 @@ export const EventDetailsPage: React.FC = () => {
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span className="text-base font-extrabold text-slate-900 dark:text-white mr-1">
+                                  {/* Right: Amount & Action Buttons */}
+                                  <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 flex-shrink-0">
+                                    <span className="text-base font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                                       {formatCurrency(expense.costMinor, currency)}
                                     </span>
 
-                                    {/* Info Button */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setActiveInfoItem(expense);
-                                        setActiveInfoCategoryName(item.name);
-                                        setActiveInfoCategoryEmoji(item.emoji);
-                                        setIsItemInfoModalOpen(true);
-                                      }}
-                                      className="p-1.5 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                                      title="Item details"
-                                    >
-                                      <Info className="w-3.5 h-3.5" />
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      {/* Info Button */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveInfoItem(expense);
+                                          setActiveInfoCategoryName(item.name);
+                                          setActiveInfoCategoryEmoji(item.emoji);
+                                          setIsItemInfoModalOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                        title="Item details"
+                                        aria-label="Item details"
+                                      >
+                                        <Info className="w-3.5 h-3.5" />
+                                      </button>
 
-                                    {/* Edit Subitem */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingExpense(expense);
-                                        setEditingItem(null);
-                                        setTargetCategoryItemId(item.id);
-                                        setIsExpenseModalOpen(true);
-                                      }}
-                                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      title="Edit Subitem"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
+                                      {/* Edit Subitem */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingExpense(expense);
+                                          setEditingItem(null);
+                                          setTargetCategoryItemId(item.id);
+                                          setIsExpenseModalOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                        title="Edit Subitem"
+                                        aria-label="Edit Subitem"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
 
-                                    {/* Delete Subitem */}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteSingleExpense(expense)}
-                                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10"
-                                      title="Delete Subitem"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                      {/* Delete Subitem */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSingleExpense(expense)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                                        title="Delete Subitem"
+                                        aria-label="Delete Subitem"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1424,7 +1444,7 @@ export const EventDetailsPage: React.FC = () => {
                                 setEditingItem(null);
                                 setIsExpenseModalOpen(true);
                               }}
-                              className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1 !px-2.5 rounded-xl border-dashed border-teal-300 dark:border-teal-700/60 hover:bg-teal-50 dark:hover:bg-teal-950/20"
+                              className="text-xs font-bold text-teal-600 dark:text-teal-400 !py-1.5 !px-3 rounded-xl border-dashed border-teal-300 dark:border-teal-700/60 hover:bg-teal-50 dark:hover:bg-teal-950/20"
                             >
                               <Plus className="w-3.5 h-3.5 mr-1" />
                               Add Subitem
@@ -1481,11 +1501,11 @@ export const EventDetailsPage: React.FC = () => {
                           return (
                             <div
                               key={s.id}
-                              className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
+                              className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2.5 text-xs"
                             >
-                              <div className="flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                <span>
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                <span className="truncate">
                                   <strong className="text-slate-800 dark:text-white font-bold">
                                     {fromName}
                                   </strong>{' '}
@@ -1496,8 +1516,8 @@ export const EventDetailsPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              <div className="flex items-center gap-2.5">
-                                <span className="font-extrabold text-slate-900 dark:text-white">
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                                   {formatCurrency(s.amountMinor, currency)}
                                 </span>
 
@@ -1506,6 +1526,7 @@ export const EventDetailsPage: React.FC = () => {
                                   onClick={() => handleDeleteSettlement(s)}
                                   className="p-1 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
                                   title="Delete settlement"
+                                  aria-label="Delete settlement"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1591,8 +1612,8 @@ export const EventDetailsPage: React.FC = () => {
                     </div>
 
                     {/* Right: Amount & Actions */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                      <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mr-1">
+                    <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800 flex-shrink-0">
+                      <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mr-1 whitespace-nowrap">
                         {formatCurrency(item.costMinor || 0, currency)}
                       </span>
 
@@ -1661,15 +1682,15 @@ export const EventDetailsPage: React.FC = () => {
       {/* ==================================================== */}
       {activeTab === 'dashboard' && financialOverview && (
         <div className="space-y-6">
-          {/* 1. Debt Simplification / Optimal Settlement Suggestions */}
-          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
+          {/* Individual Member Totals */}
+          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-4 sm:p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>🤝</span> Optimal Settlement Suggestions
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>👥</span> Individual Member Totals
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Minimal transactions calculated automatically to settle all debts.
+                  Individual spending, fair share allocation, and current net balances.
                 </p>
               </div>
 
@@ -1679,132 +1700,6 @@ export const EventDetailsPage: React.FC = () => {
                   Zero-Sum Balanced
                 </span>
               )}
-            </div>
-
-            {financialOverview.settlementSuggestions.length === 0 ? (
-              <div className="text-center py-8 text-xs font-bold text-teal-600 dark:text-teal-400">
-                🎉 All event expenses are completely settled! No outstanding payments.
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {financialOverview.settlementSuggestions.map((sug, idx) => {
-                  const fromMember = event.members[sug.fromUid];
-                  const fromName = getPersonDisplayName(sug.fromUid) || sug.fromName || 'Member';
-                  const toName = getPersonDisplayName(sug.toUid) || sug.toName || 'Member';
-                  const isUserInvolved = sug.fromUid === user.uid || sug.toUid === user.uid;
-
-                  // Check if there is an active pending confirmation between these two
-                  const pendingConf = paymentConfirmations.find(
-                    (pc) =>
-                      pc.debtorUid === sug.fromUid &&
-                      pc.creditorUid === sug.toUid &&
-                      pc.status === 'awaiting_confirmation'
-                  );
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        isUserInvolved
-                          ? 'border-teal-500/40 bg-teal-50/20 dark:bg-teal-950/15'
-                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar
-                          src={fromMember?.photoURL}
-                          name={fromName}
-                          size="sm"
-                        />
-                        <div className="text-xs">
-                          <span className="font-extrabold text-slate-800 dark:text-white">
-                            {fromName} {sug.fromUid === user.uid ? '(You)' : ''}
-                          </span>
-                          <span className="text-slate-400 mx-1.5">owes</span>
-                          <strong className="text-slate-800 dark:text-white font-extrabold">
-                            {toName} {sug.toUid === user.uid ? '(You)' : ''}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-3">
-                        <span className="text-base font-black text-slate-900 dark:text-white">
-                          {formatCurrency(sug.amountMinor, currency)}
-                        </span>
-
-                        {/* Debtor Action: Paid or Awaiting Confirmation */}
-                        {sug.fromUid === user.uid && (
-                          pendingConf ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                              <Clock className="w-3.5 h-3.5" />
-                              Awaiting Confirmation ({formatCurrency(pendingConf.amountMinor, currency)})
-                            </span>
-                          ) : (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() =>
-                                handleOpenDebtorPaymentModal(sug.toUid, toName, sug.amountMinor)
-                              }
-                              leftIcon={<CreditCard className="w-3.5 h-3.5" />}
-                            >
-                              Paid
-                            </Button>
-                          )
-                        )}
-
-                        {/* Creditor Action: Settle Now (Confirm Receipt) */}
-                        {sug.toUid === user.uid && pendingConf && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                            onClick={() => handleOpenConfirmReceiptModal(pendingConf)}
-                            leftIcon={<Check className="w-3.5 h-3.5" />}
-                          >
-                            Settle Now
-                          </Button>
-                        )}
-
-                        {/* Send Reminder: Anybody can do it. No permissions required. Prevents spamming for 5 mins */}
-                        {sug.fromUid !== user.uid && !pendingConf && (
-                          isReminderOnCooldown(sug.fromUid, event.id) ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
-                              <Check className="w-3.5 h-3.5 text-emerald-500" />
-                              Reminder sent
-                            </span>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={Boolean(sendingReminders[sug.fromUid])}
-                              isLoading={Boolean(sendingReminders[sug.fromUid])}
-                              onClick={() => handleSendReminder(sug.fromUid, sug.amountMinor)}
-                              leftIcon={<BellRing className="w-3.5 h-3.5 text-amber-500" />}
-                            >
-                              Send Reminder
-                            </Button>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* 2. Individual Member Totals */}
-          <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>👥</span> Individual Member Totals
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Individual spending, fair share allocation, and current net balances.
-                </p>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -1826,25 +1721,25 @@ export const EventDetailsPage: React.FC = () => {
                     key={uid}
                     className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-2.5 transition-all"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
+                    <div className="flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <Avatar
                           src={member?.photoURL}
                           name={displayName}
                           size="sm"
                         />
-                        <div>
-                          <span className="text-xs font-bold text-slate-800 dark:text-white block">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs font-bold text-slate-800 dark:text-white truncate block">
                             {displayName} {uid === user.uid ? '(You)' : ''}
                           </span>
-                          <span className="text-[10px] text-slate-400 capitalize">
+                          <span className="text-[10px] text-slate-400 capitalize block">
                             {member?.role || 'Member'}
                           </span>
                         </div>
                       </div>
 
                       <span
-                        className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                        className={`text-xs font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${
                           summary.netBalanceMinor > 0
                             ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                             : summary.netBalanceMinor < 0
@@ -1877,8 +1772,8 @@ export const EventDetailsPage: React.FC = () => {
 
                     {/* Member owes money: anybody can remind them! No permissions required. Prevents spamming for 5 mins */}
                     {summary.netBalanceMinor < 0 && uid !== user.uid && (
-                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
                           {owesYou > 0
                             ? `Owes you ${formatCurrency(owesYou, currency)}`
                             : `Owes ${formatCurrency(Math.abs(summary.netBalanceMinor), currency)}`}
@@ -1916,8 +1811,8 @@ export const EventDetailsPage: React.FC = () => {
 
                     {/* Current user owes member */}
                     {youOwe > 0 && uid !== user.uid && (
-                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
                           You owe {formatCurrency(youOwe, currency)}
                         </span>
                         {debtorPending ? (
