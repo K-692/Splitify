@@ -14,8 +14,8 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Live_App-k--692.github.io%2FSplitify-16AA88?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Live App" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.1.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.1.0_(Download)-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" /></a>
-  <img src="https://img.shields.io/badge/Release-v1.1.0-16AA88?style=for-the-badge" alt="Release" />
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.2.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.2.0_(Download)-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" /></a>
+  <img src="https://img.shields.io/badge/Release-v1.2.0-16AA88?style=for-the-badge" alt="Release" />
   <img src="https://img.shields.io/badge/React-19-203D62?style=for-the-badge&logo=react" alt="React 19" />
   <img src="https://img.shields.io/badge/Capacitor-6.2-119EFF?style=for-the-badge&logo=capacitor" alt="Capacitor" />
   <img src="https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />
@@ -32,20 +32,21 @@
 Get the official **Splitify Android Application** for seamless, on-the-go collaborative expense management:
 
 <p align="center">
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.1.0.apk">
-    <img src="https://img.shields.io/badge/Download_APK-v1.1.0_(Direct_Download)-16AA88?style=for-the-badge&logo=android&logoColor=white" alt="Download Splitify Android APK" />
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.2.0.apk">
+    <img src="https://img.shields.io/badge/Download_APK-v1.2.0_(Direct_Download)-16AA88?style=for-the-badge&logo=android&logoColor=white" alt="Download Splitify Android APK" />
   </a>
 </p>
 
 | Attribute | Specification |
 |---|---|
-| **Version** | `v1.1.0` (Production Release) |
+| **Version** | `v1.2.0` (Production Release) |
 | **Minimum Compatibility** | Android 8.0 Oreo (API level 26) or higher |
 | **Target SDK** | Android 14 (API level 34) |
 | **Package Name** | `com.splitify.app` |
-| **Direct APK Link** | [**Splitify-v1.1.0.apk**](https://github.com/K-692/Splitify/raw/main/Splitify-v1.1.0.apk) |
-| **APK in Repository** | [`Splitify-v1.1.0.apk`](./Splitify-v1.1.0.apk) |
-| **What's New in v1.1.0** | Receiver-side one-tap **Paid** (settles instantly), mobile layout fixes for exact-amount splits, event tabs and headers |
+| **Direct APK Link** | [**Splitify-v1.2.0.apk**](https://github.com/K-692/Splitify/raw/main/Splitify-v1.2.0.apk) |
+| **APK in Repository** | [`Splitify-v1.2.0.apk`](./Splitify-v1.2.0.apk) |
+| **What's New in v1.2.0** | New **Individual Expenses** tab per event — see each person's credited/debited amounts per item, grouped by **Names** or **Items** |
+| **v1.1.0** | Receiver-side one-tap **Paid** (settles instantly), mobile layout fixes |
 
 ### 🚀 Android Native Highlights & Integration
 - **Shared Real-Time Backend:** Log in with your existing Google Account on both web and Android — all events, expenses, settlements, and member balances stay synchronized instantly in real time via Cloud Firestore.
@@ -57,7 +58,7 @@ Get the official **Splitify Android Application** for seamless, on-the-go collab
 - **Mobile-Optimized UX:** Full dark/light status bar theming, notch and safe-area compatibility, responsive modal adjustments for device keyboards, and high-DPI adaptive launcher icons.
 
 ### 📲 How to Install the APK on Your Android Device
-1. Download **`Splitify-v1.1.0.apk`** on your Android phone using the direct link above.
+1. Download **`Splitify-v1.2.0.apk`** on your Android phone using the direct link above.
 2. Tap the downloaded file in your browser or Downloads folder.
 3. If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **Allow from this source**.
 4. Tap **Install** and launch **Splitify**.
@@ -119,6 +120,12 @@ Splitify adopts an **Item-First architecture** designed for speed, flexibility, 
   - **`[ Not Received ]`:** Rejects the payment claim with an optional note, restores full outstanding debt, and notifies the debtor.
 - **Partial Settlements:** Full support for partial repayments (`amount <= remainingDebt`), accurately reducing the outstanding balance.
 - **Payment Reminders with 5-Minute Anti-Spam:** Creditors can click `Send Reminder` to remind debtors of unsettled dues. Locks out spamming for 5 minutes.
+
+### 6a. 🧾 Individual Expenses Tab
+- **Per-person breakdown:** Every event has an **Individual Expenses** tab showing, for each person, exactly which items they paid for and their share of every item.
+- **Credited vs Debited:** *Credited* is money a person paid out (the full cost of an expense they paid, or a settlement they sent). *Debited* is their own share of an expense, or a settlement they received. Credited − Debited equals the person's net balance.
+- **Group by Names or Items:** *Names* shows a card per person (you first) with Credited / Debited / Net totals and an expandable list of every entry. *Items* shows a card per expense or category with each person's credited and debited amounts for it; settlements appear last.
+- **Read-only:** It is calculated from existing expenses and settlements, so no new data is stored in Firestore.
 
 ### 7. ⏱️ Chronological Sorting of All Event Entries
 - **Date & Time Picker:** Standalone expenses and subitems record both date (`YYYY-MM-DD`) and time (`HH:mm`), establishing an exact `occurredAt` timestamp.
