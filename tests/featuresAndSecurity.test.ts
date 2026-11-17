@@ -202,17 +202,26 @@ describe('User Profile UID Lookup, Event Invitations & Slot Claiming', () => {
       ).rejects.toThrow('has already been claimed');
     });
 
-    it('should allow joining as a new person without claiming a slot', async () => {
+    it('should refuse joining without choosing a slot or entering a new name', async () => {
       const eventId = await dataService.createEvent('Party', hostUser);
       const link = await dataService.createInvitationLink(eventId, hostUser, { scope: 'full' });
 
-      const { event: joinedEvent } = await dataService.joinEventByInvitationToken(
-        link.token,
-        friendUser
-      );
+      await expect(
+        dataService.joinEventByInvitationToken(link.token, friendUser)
+      ).rejects.toThrow(/choose your name/i);
+      await expect(
+        dataService.joinEventByInvitationToken(link.token, friendUser, undefined, '   ')
+      ).rejects.toThrow(/choose your name/i);
+    });
 
-      expect(joinedEvent.members[friendUser.uid]).toBeDefined();
-      expect(joinedEvent.members[friendUser.uid].slotId).toBeUndefined();
+    it('should refuse adding a new name that matches an unclaimed slot', async () => {
+      const eventId = await dataService.createEvent('Trip', hostUser);
+      await dataService.createPersonSlot(eventId, 'Jitu');
+      const link = await dataService.createInvitationLink(eventId, hostUser, { scope: 'full' });
+
+      await expect(
+        dataService.joinEventByInvitationToken(link.token, friendUser, undefined, ' jitu ')
+      ).rejects.toThrow(/already on the list/i);
     });
 
     it('should allow creating a new slot when joining an event if no slot to claim', async () => {

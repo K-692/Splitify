@@ -18,6 +18,7 @@ import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
 import { formatDisplayExpenseDate } from '@/utils/date';
 import { getEmojiForName } from '@/utils/emoji';
+import { resolvePersonName, resolvePersonPhoto } from '@/utils/people';
 import { sortItemsChronologicalDesc, sortEntriesChronologicalDesc } from '@/utils/sorting';
 import {
   isReminderOnCooldown,
@@ -186,6 +187,48 @@ export const EventDetailsPage: React.FC = () => {
     );
   }, [event, expenses, settlements, user?.uid, items]);
 
+  /** Expense / settlement names that still reference a person slot */
+  const getSlotUsage = (slotId: string): string[] => {
+    const names: string[] = [];
+    const uses = (paidBy?: string, shares?: Record<string, number>, participants?: string[]) =>
+      paidBy === slotId || Boolean(shares && shares[slotId]) || Boolean(participants?.includes(slotId));
+    const activeCategoryIds = new Set(items.filter((i) => !i.deleted && i.isCategory).map((i) => i.id));
+    for (const it of items) {
+      if (it.deleted || it.isCategory || it.isSettlementsItem) continue;
+      if (uses(it.paidBy, it.shares, it.participants)) names.push(it.name);
+    }
+    for (const ex of expenses) {
+      if (ex.deleted || !activeCategoryIds.has(ex.itemId)) continue;
+      if (uses(ex.paidBy, ex.shares, ex.participants)) names.push(ex.name);
+    }
+    for (const st of settlements) {
+      if (st.status === 'completed' && (st.payerUid === slotId || st.receiverUid === slotId)) {
+        names.push('a settlement');
+      }
+    }
+    return names;
+  };
+
+  const handleDeletePersonSlot = async (slotId: string, slotName: string) => {
+    if (!event || !user) return;
+    const usage = getSlotUsage(slotId);
+    if (usage.length > 0) {
+      alert(
+        `"${slotName}" can't be removed because they are part of: ${usage.slice(0, 5).join(', ')}${
+          usage.length > 5 ? ` and ${usage.length - 5} more` : ''
+        }.\n\nRemove them from those expenses first, then try again.`
+      );
+      return;
+    }
+    if (!window.confirm(`Remove "${slotName}" from this event?`)) return;
+    try {
+      await dataService.deletePersonSlot(event.id, slotId, user);
+      showToast(`Removed ${slotName}`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove person');
+    }
+  };
+
   const individualLedger = useMemo(() => {
     if (!event) return [];
     return buildIndividualLedger(items, expenses, settlements, event.slots || {});
@@ -207,15 +250,7 @@ export const EventDetailsPage: React.FC = () => {
 
   const getPersonDisplayName = (id: string): string => {
     if (!id || !event) return '';
-    if (event.members[id]) return getMemberHandle(event.members[id]);
-    if (event.slots?.[id]) {
-      const slot = event.slots[id];
-      if (slot.isClaimed && slot.claimedByUid && event.members[slot.claimedByUid]) {
-        return getMemberHandle(event.members[slot.claimedByUid]);
-      }
-      return `${slot.placeholderName} (Pending)`;
-    }
-    return id.replace(/^@/, '');
+    return resolvePersonName(id, event.members, event.slots);
   };
 
   const [isEditCategoryModalOpen, setIsEditCategoryModalOpen] = useState(false);
@@ -1400,7 +1435,7 @@ export const EventDetailsPage: React.FC = () => {
                                         <span>
                                           Paid by{' '}
                                           <strong className="text-slate-700 dark:text-slate-200 font-semibold">
-                                            {getPersonDisplayName(expense.paidBy) || (expense.createdByName?.startsWith('@') ? expense.createdByName : `@${(expense.createdByName || 'unknown').toLowerCase().replace(/\s+/g, '_')}`)}
+                                            {expense.paidBy ? getPersonDisplayName(expense.paidBy) : expense.createdByName?.replace(/^@/, '') || 'Unknown'}
                                           </strong>
                                         </span>
                                         {expense.expenseDate && (
@@ -1627,7 +1662,7 @@ export const EventDetailsPage: React.FC = () => {
                           <span>
                             Paid by{' '}
                             <strong className="text-slate-700 dark:text-slate-200 font-bold">
-                              {getPersonDisplayName(item.paidBy || '') || (item.createdByName?.startsWith('@') ? item.createdByName : `@${(item.createdByName || 'unknown').toLowerCase().replace(/\s+/g, '_')}`)}
+                              {item.paidBy ? getPersonDisplayName(item.paidBy) : item.createdByName?.replace(/^@/, '') || 'Unknown'}
                             </strong>
                           </span>
                           {item.expenseDate && (
@@ -2069,7 +2104,7 @@ export const EventDetailsPage: React.FC = () => {
           currentUserUid={user.uid}
           currency={currency}
           getName={(uid) => getPersonDisplayName(uid) || financialOverview?.memberSummaries[uid]?.displayName || 'Member'}
-          getPhotoURL={(uid) => event.members[uid]?.photoURL}
+          getPhotoURL={(uid) => resolvePersonPhoto(uid, event.members, event.slots)}
         />
       )}
 
@@ -2205,9 +2240,22 @@ export const EventDetailsPage: React.FC = () => {
                           Joined ✓
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex-shrink-0">
-                          Pending
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                            Pending
+                          </span>
+                          {isHost && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePersonSlot(slot.id, slot.placeholderName)}
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors"
+                              title={`Remove ${slot.placeholderName}`}
+                              aria-label={`Remove ${slot.placeholderName}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -2305,6 +2353,7 @@ export const EventDetailsPage: React.FC = () => {
         isOpen={isSlotsModalOpen}
         onClose={() => setIsSlotsModalOpen(false)}
         event={event}
+        getSlotUsage={getSlotUsage}
       />
 
       {/* Delete Event Confirmation Modal (Host) */}
@@ -2436,6 +2485,7 @@ export const EventDetailsPage: React.FC = () => {
           currency={currency}
           currentUser={user}
           eventMembers={event.members}
+          eventSlots={event.slots || {}}
           onEdit={() => {
             if (!activeInfoItem) return;
             if ('isCategory' in activeInfoItem && activeInfoItem.isCategory) {
