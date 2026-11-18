@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/assets/splitify-logo.png" alt="Splitify" width="140" />
+  <img src="./app_logo.png" alt="Splitify logo" width="140" style="border-radius: 28px;" />
 </p>
 
 <h1 align="center">Splitify</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Web_App-Open-16AA88?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the web app" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.4.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.1.apk"><img src="https://img.shields.io/badge/Android_APK-v1.4.1-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
 </p>
 
 ---
@@ -20,7 +20,7 @@
 | Platform | Link |
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
-| Android (v1.4.0) | [Splitify-v1.4.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.0.apk) — Android 8.0 or later |
+| Android (v1.4.1) | [Splitify-v1.4.1.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.1.apk) — Android 8.0 or later |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
 
