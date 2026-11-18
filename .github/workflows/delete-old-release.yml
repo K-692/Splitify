@@ -1,0 +1,25 @@
+name: Delete v1.0.0 Release (one-time)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/delete-old-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete release v1.0.0 (git tag is kept)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete v1.0.0 --repo "$GITHUB_REPOSITORY" --yes
+            echo "Deleted release v1.0.0"
+          else
+            echo "Release v1.0.0 not found; nothing to do"
+          fi
