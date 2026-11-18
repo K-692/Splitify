@@ -70,16 +70,17 @@ export const LoginPage: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center p-4 bg-[#F8FAFC] dark:bg-[#0D1B2A]">
       <NetworkStatusBanner />
       <div className="w-full max-w-md bg-white dark:bg-[#15263C] rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8 sm:p-10 transition-all text-center">
-        {/* Official Splitify Logo (No circular frame) */}
-        <div className="w-48 sm:w-56 mx-auto mb-3 flex items-center justify-center">
-          <img
-            src={`${import.meta.env.BASE_URL}assets/splitify-logo.png`}
-            alt="Splitify Logo"
-            className="w-full h-auto max-h-24 object-contain"
-          />
-        </div>
+        {/* App logo and name */}
+        <img
+          src={`${import.meta.env.BASE_URL}assets/app-logo.png`}
+          alt=""
+          className="w-24 h-24 sm:w-28 sm:h-28 mx-auto rounded-3xl shadow-lg mb-4"
+        />
+        <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-[#203D62] dark:text-white mb-2">
+          Split<span className="font-semibold text-[#16AA88]">ify</span>
+        </h1>
 
-        {/* Tagline right after logo (no Splitify text) */}
+        {/* Tagline */}
         <p className="text-sm sm:text-base font-bold text-slate-600 dark:text-slate-300 max-w-xs mx-auto leading-relaxed">
           Collaborative Expense Splitting for Trips, Roommates, Friends
         </p>

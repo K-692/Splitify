@@ -40,12 +40,15 @@ export const Navbar: React.FC = () => {
     <header className="sticky top-0 z-40 bg-white/85 dark:bg-[#0D1B2A]/85 backdrop-blur-md border-b border-slate-200/70 dark:border-slate-800/80 transition-colors">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
         {/* Brand & Logo */}
-        <Link to="/" className="flex items-center gap-2 group select-none">
+        <Link to="/" className="flex items-center gap-2.5 group select-none" aria-label="Splitify home">
           <img
-            src={`${import.meta.env.BASE_URL}assets/splitify-logo.png`}
-            alt="Splitify Logo"
-            className="h-10 sm:h-12 w-auto max-w-[180px] sm:max-w-[220px] object-contain group-hover:scale-105 transition-transform"
+            src={`${import.meta.env.BASE_URL}assets/app-logo.png`}
+            alt=""
+            className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl shadow-sm group-hover:scale-105 transition-transform"
           />
+          <span className="text-xl sm:text-2xl font-black tracking-tight text-[#203D62] dark:text-white">
+            Split<span className="font-semibold text-[#16AA88]">ify</span>
+          </span>
         </Link>
 
         {/* Desktop Navigation */}
