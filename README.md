@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Web_App-Open-16AA88?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the web app" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.3.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.3.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.4.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
 </p>
 
 ---
@@ -20,7 +20,7 @@
 | Platform | Link |
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
-| Android (v1.3.0) | [Splitify-v1.3.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.3.0.apk) — Android 8.0 or later |
+| Android (v1.4.0) | [Splitify-v1.4.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.0.apk) — Android 8.0 or later |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
 
@@ -42,7 +42,9 @@
 - **Marking a payment as paid**
   - *By the person receiving the money:* recorded in the ledger immediately.
   - *By the person paying:* sent to the receiver to approve or reject before it is recorded.
-- **Individual Expenses** tab: what each person paid for and their share of every item, grouped by **Names** or by **Items**. *Credited* is money a person paid out; *Debited* is their own share or a settlement received. Credited minus Debited equals the person's balance.
+- **Individual Expenses** tab: each person's share of every item, grouped by **Names** or by **Items**.
+  - Each item shows only the person's share, as a red *Debited* amount; the item card shows who paid for it.
+  - Each person's summary shows *Credited* (the total they paid), *Debited* (their total share, plus settlements received) and *Net*. Net equals the person's balance.
 
 **General**
 - Google Sign-In, real-time sync across web and Android, in-app notifications.

@@ -176,9 +176,11 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
               personLines.map((l) => {
                 const detail =
                   l.kind === 'settlement'
-                    ? `${l.creditMinor > 0 ? 'To' : 'From'} ${getName(l.counterpartyUid || '')}`
+                    ? l.creditMinor > 0
+                      ? `Paid ${formatCurrency(l.costMinor, currency)} to ${getName(l.counterpartyUid || '')}`
+                      : `Received from ${getName(l.counterpartyUid || '')}`
                     : l.creditMinor > 0
-                    ? `Paid the full ${formatCurrency(l.costMinor, currency)}`
+                    ? `${uid === currentUserUid ? 'You' : getName(uid)} paid ${formatCurrency(l.costMinor, currency)}`
                     : `${getName(l.paidByUid || '') || 'Someone'} paid ${formatCurrency(l.costMinor, currency)}`;
                 return (
                   <div key={l.key} className="flex items-start gap-2.5 px-3.5 py-2.5 min-w-0">
@@ -195,9 +197,14 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                         {l.occurredAt ? ` · ${formatDate(l.occurredAt)}` : ''}
                       </span>
                     </div>
-                    <div className="flex flex-col items-end text-xs flex-shrink-0">
-                      {l.creditMinor > 0 && <Amount value={l.creditMinor} currency={currency} tone="credit" />}
-                      {l.debitMinor > 0 && <Amount value={l.debitMinor} currency={currency} tone="debit" />}
+                    <div className="text-xs flex-shrink-0 text-right">
+                      {l.debitMinor > 0 ? (
+                        <Amount value={l.debitMinor} currency={currency} tone="debit" />
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                          {l.kind === 'settlement' ? 'Settled' : 'No share'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -217,6 +224,15 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
     for (const l of groupLines) entryCosts.set(l.entryId, l.costMinor);
     const totalCost = [...entryCosts.values()].reduce((a, b) => a + b, 0);
     const entryNames = [...new Set(groupLines.filter((l) => l.isSubitem).map((l) => l.entryName))];
+    const paidByTotals = new Map<string, number>();
+    for (const l of groupLines) {
+      if (l.creditMinor > 0) paidByTotals.set(l.personUid, (paidByTotals.get(l.personUid) || 0) + l.creditMinor);
+    }
+    const payersLabel = [...paidByTotals.entries()]
+      .map(([uid, amt]) =>
+        paidByTotals.size === 1 ? getName(uid) : `${getName(uid)} ${formatCurrency(amt, currency)}`
+      )
+      .join(', ');
 
     const perPerson = groupLedgerBy(groupLines, 'personUid');
     const people = [...perPerson.keys()].sort((a, b) =>
@@ -248,6 +264,11 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                 ? entryNames.join(', ')
                 : formatDate(first.occurredAt)}
             </span>
+            {!isSettlements && payersLabel && (
+              <span className="block text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate">
+                Paid by {payersLabel}
+              </span>
+            )}
           </div>
           <span className="text-sm font-black text-slate-800 dark:text-white whitespace-nowrap flex-shrink-0">
             {formatCurrency(totalCost, currency)}
@@ -261,10 +282,9 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
 
         {isOpen && (
           <div className="border-t border-slate-200/70 dark:border-slate-700/60">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-3 px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
               <span>Person</span>
-              <span className="text-right">Credited</span>
-              <span className="text-right">Debited</span>
+              <span className="text-right">{isSettlements ? 'Paid / Received' : 'Share'}</span>
             </div>
             <div className="divide-y divide-slate-200/60 dark:divide-slate-700/50">
               {people.map((uid) => {
@@ -272,7 +292,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                 return (
                   <div
                     key={uid}
-                    className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 px-3.5 py-2 text-xs"
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3.5 py-2 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Avatar src={getPhotoURL(uid)} name={getName(uid)} size="xs" />
@@ -281,10 +301,19 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                       </span>
                     </div>
                     <span className="text-right">
-                      <Amount value={t.creditMinor} currency={currency} tone="credit" muted />
-                    </span>
-                    <span className="text-right">
-                      <Amount value={t.debitMinor} currency={currency} tone="debit" muted />
+                      {isSettlements ? (
+                        t.creditMinor > 0 ? (
+                          <span className="font-bold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                            Paid {formatCurrency(t.creditMinor, currency)}
+                          </span>
+                        ) : (
+                          <Amount value={t.debitMinor} currency={currency} tone="debit" muted />
+                        )
+                      ) : t.debitMinor > 0 ? (
+                        <Amount value={t.debitMinor} currency={currency} tone="debit" muted />
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400">No share</span>
+                      )}
                     </span>
                   </div>
                 );
@@ -331,11 +360,11 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
         <span className="inline-flex items-center gap-1">
           <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-          <strong className="text-emerald-600 dark:text-emerald-400">Credited</strong> = money paid out (expense or settlement)
+          <strong className="text-emerald-600 dark:text-emerald-400">Credited</strong> = total amount you paid (shown in the summary only)
         </span>
         <span className="inline-flex items-center gap-1">
           <ArrowDownLeft className="w-3.5 h-3.5 text-rose-500" />
-          <strong className="text-rose-600 dark:text-rose-400">Debited</strong> = own share, or settlement received
+          <strong className="text-rose-600 dark:text-rose-400">Debited</strong> = your share of each item (or settlement received)
         </span>
       </div>
 
