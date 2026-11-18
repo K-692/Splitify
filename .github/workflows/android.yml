@@ -82,10 +82,11 @@ jobs:
       - name: Locate & Rename APK
         run: |
           mkdir -p build-artifacts
+          VERSION=$(node -p "require('./package.json').version")
           if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk build-artifacts/Splitify-v1.0.0.apk
+            cp android/app/build/outputs/apk/release/app-release.apk "build-artifacts/Splitify-v${VERSION}.apk"
           elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk build-artifacts/Splitify-v1.0.0-unsigned.apk
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk "build-artifacts/Splitify-v${VERSION}-unsigned.apk"
           fi
           ls -lh build-artifacts/
 
