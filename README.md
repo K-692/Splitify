@@ -21,6 +21,7 @@
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
 | Android (v1.4.2) | [Splitify-v1.4.2.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.4.2.apk) — Android 8.0 or later |
+| Release notes | [GitHub Releases](https://github.com/K-692/Splitify/releases/latest) |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
 
