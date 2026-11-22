@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Web_App-Open-16AA88?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the web app" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.6.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.1.apk"><img src="https://img.shields.io/badge/Android_APK-v1.6.1-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
 </p>
 
 ---
@@ -38,7 +38,7 @@
 | Platform | Link |
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
-| Android (v1.6.0) | [Splitify-v1.6.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.0.apk) — Android 8.0 or later |
+| Android (v1.6.1) | [Splitify-v1.6.1.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.1.apk) — Android 8.0 or later |
 | Release notes | [GitHub Releases](https://github.com/K-692/Splitify/releases/latest) |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
@@ -71,7 +71,7 @@
 
 **General**
 - Google Sign-In, real-time sync across web and Android, in-app notifications.
-- **Android push notifications:** every new in-app notification (expenses, payments, reminders, invitations) also arrives as a phone notification — even when the app is closed — through Firebase Cloud Messaging. Tapping it opens the event. Android 13+ asks for permission the first time.
+- **Android phone notifications:** every new in-app notification (expenses, payments, reminders, invitations) also appears in the phone's notification tray while the app is open or running in the background. Tapping it opens the event. Android 13+ asks for permission the first time. (Delivery after the app is fully closed would need Cloud Functions, which aren't on Firebase's free Spark plan, so it isn't included.)
 - Pop-up forms scroll on their own and stay above the on-screen keyboard on iPhone and Android; the page behind them no longer moves.
 - Light and dark themes; layouts tested down to 320 px wide.
 - Plain-text expense report for sharing.
@@ -96,7 +96,6 @@ src/
   services/       Firestore data access (with a local demo mode) and auth
   utils/          Currency, dates, name resolution, report export
 tests/            Unit and component tests
-functions/        Cloud Function that sends push notifications
 android/          Capacitor Android project
 ```
 
@@ -130,11 +129,11 @@ Without Firebase credentials the app runs in a local **demo mode** backed by bro
 
 ## Deployment
 
-Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.6.0`) publishes a GitHub Release with the APK committed at the repository root.
+Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.6.1`) publishes a GitHub Release with the APK committed at the repository root.
 
-Backend (Firestore rules and the push-notification Cloud Function) is deployed with the Firebase CLI. Cloud Functions require the project to be on the **Blaze** plan:
+The backend runs entirely on Firebase's free **Spark** plan (Authentication and Cloud Firestore, no Cloud Functions). Firestore security rules are deployed with the Firebase CLI:
 
 ```bash
 npx firebase-tools login
-npx firebase-tools deploy --project splitify-151bd --only firestore:rules,functions
+npx firebase-tools deploy --project splitify-151bd --only firestore:rules
 ```

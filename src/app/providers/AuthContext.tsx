@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { removeCurrentPushToken } from '@/services/pushService';
 import { Capacitor } from '@capacitor/core';
 import { UserProfile } from '@/types';
 import { authService, initializeNativeGoogleAuth } from '@/services/firebase/authService';
@@ -49,7 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    if (user) await removeCurrentPushToken(user.uid).catch(() => undefined);
     await authService.signOut();
     setUser(null);
   };
