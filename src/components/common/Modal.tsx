@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -18,19 +19,46 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = 'md',
 }) => {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Tracks the *visible* viewport so the modal stays above the iOS/Android keyboard
+  const [viewport, setViewport] = useState<{ height: number; top: number } | null>(null);
+
   useEffect(() => {
+    if (!isOpen) return;
+    lockBodyScroll();
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    }
+    window.addEventListener('keydown', handleKeyDown);
+
+    const vv = window.visualViewport;
+    const syncViewport = () => {
+      if (vv) setViewport({ height: vv.height, top: vv.offsetTop });
+    };
+    syncViewport();
+    vv?.addEventListener('resize', syncViewport);
+    vv?.addEventListener('scroll', syncViewport);
+
+    // When a field gets focus, keep it visible inside the modal's own scroll area
+    const content = contentRef.current;
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target || !content?.contains(target)) return;
+      if (!/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      window.setTimeout(() => target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+    };
+    document.addEventListener('focusin', handleFocusIn);
+
     return () => {
-      document.body.style.overflow = 'unset';
+      unlockBodyScroll();
       window.removeEventListener('keydown', handleKeyDown);
+      vv?.removeEventListener('resize', syncViewport);
+      vv?.removeEventListener('scroll', syncViewport);
+      document.removeEventListener('focusin', handleFocusIn);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -42,7 +70,13 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div
+      className="fixed inset-x-0 top-0 z-50 flex items-center justify-center p-3 sm:p-6 overscroll-none"
+      style={{
+        height: viewport ? `${viewport.height}px` : '100dvh',
+        transform: viewport ? `translateY(${viewport.top}px)` : undefined,
+      }}
+    >
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
@@ -51,7 +85,7 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Modal Container */}
       <div
-        className={`relative w-full ${maxWidths[maxWidth]} bg-white dark:bg-[#15263C] rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-4 sm:p-6 z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh] flex flex-col`}
+        className={`relative w-full ${maxWidths[maxWidth]} bg-white dark:bg-[#15263C] rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-4 sm:p-6 z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden max-h-full flex flex-col`}
       >
         {/* Header */}
         {(title || emoji) && (
@@ -79,7 +113,12 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {/* Content */}
-        <div className="overflow-y-auto overflow-x-hidden flex-1 min-w-0 pr-1">{children}</div>
+        <div
+          ref={contentRef}
+          className="modal-scroll overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 pr-1"
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

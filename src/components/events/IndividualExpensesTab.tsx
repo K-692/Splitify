@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Users, Layers, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { ChevronDown, ChevronRight, Users, Layers } from 'lucide-react';
 import { Avatar } from '@/components/common/Avatar';
 import { formatCurrency } from '@/utils/currency';
 import {
@@ -37,60 +37,30 @@ const formatDate = (ts: number): string => {
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-const Amount: React.FC<{ value: number; currency: string; tone: 'credit' | 'debit'; muted?: boolean }> = ({
-  value,
-  currency,
-  tone,
-  muted,
-}) => {
-  if (!value) {
-    return <span className="text-slate-300 dark:text-slate-600">—</span>;
-  }
-  const color =
-    tone === 'credit'
-      ? 'text-emerald-600 dark:text-emerald-400'
-      : 'text-rose-600 dark:text-rose-400';
-  return (
-    <span className={`${muted ? 'font-bold' : 'font-extrabold'} ${color} whitespace-nowrap`}>
-      {tone === 'credit' ? '+' : '−'}
-      {formatCurrency(value, currency)}
-    </span>
-  );
-};
+/** Neutral (white in dark mode) amount with a small label, e.g. "Paid ₹130" / "Share ₹65". */
+const LabeledAmount: React.FC<{ label: string; value: number; currency: string }> = ({ label, value, currency }) => (
+  <span className="whitespace-nowrap">
+    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mr-1">{label}</span>
+    <span className="font-extrabold text-slate-900 dark:text-white">{formatCurrency(value, currency)}</span>
+  </span>
+);
 
 const TotalsStrip: React.FC<{ totals: LedgerTotals; currency: string }> = ({ totals, currency }) => (
-  <div className="grid grid-cols-3 gap-1.5 text-center">
-    <div className="rounded-xl bg-emerald-500/10 px-1.5 py-1.5 min-w-0">
-      <span className="block text-[10px] font-bold uppercase tracking-wide text-emerald-700/80 dark:text-emerald-300/80">
-        Credited
+  <div className="grid grid-cols-2 gap-1.5 text-center">
+    <div className="rounded-xl bg-slate-100 dark:bg-slate-800/80 px-1.5 py-1.5 min-w-0">
+      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        Paid
       </span>
-      <span className="block text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 truncate">
+      <span className="block text-sm font-black text-slate-900 dark:text-white truncate">
         {formatCurrency(totals.creditMinor, currency)}
       </span>
     </div>
-    <div className="rounded-xl bg-rose-500/10 px-1.5 py-1.5 min-w-0">
-      <span className="block text-[10px] font-bold uppercase tracking-wide text-rose-700/80 dark:text-rose-300/80">
-        Debited
-      </span>
-      <span className="block text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400 truncate">
-        {formatCurrency(totals.debitMinor, currency)}
-      </span>
-    </div>
-    <div className="rounded-xl bg-slate-100 dark:bg-slate-800 px-1.5 py-1.5 min-w-0">
+    <div className="rounded-xl bg-slate-100 dark:bg-slate-800/80 px-1.5 py-1.5 min-w-0">
       <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        Net
+        Share
       </span>
-      <span
-        className={`block text-xs sm:text-sm font-black truncate ${
-          totals.netMinor > 0
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : totals.netMinor < 0
-            ? 'text-rose-600 dark:text-rose-400'
-            : 'text-slate-500 dark:text-slate-400'
-        }`}
-      >
-        {totals.netMinor > 0 ? '+' : totals.netMinor < 0 ? '−' : ''}
-        {formatCurrency(Math.abs(totals.netMinor), currency)}
+      <span className="block text-sm font-black text-slate-900 dark:text-white truncate">
+        {formatCurrency(totals.debitMinor, currency)}
       </span>
     </div>
   </div>
@@ -174,14 +144,15 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
               <p className="px-3.5 py-4 text-xs text-center text-slate-400">No expenses yet.</p>
             ) : (
               personLines.map((l) => {
+                const who = uid === currentUserUid ? 'You' : getName(uid);
                 const detail =
                   l.kind === 'settlement'
                     ? l.creditMinor > 0
-                      ? `Paid ${formatCurrency(l.costMinor, currency)} to ${getName(l.counterpartyUid || '')}`
-                      : `Received from ${getName(l.counterpartyUid || '')}`
+                      ? `To ${getName(l.counterpartyUid || '')}`
+                      : `From ${getName(l.counterpartyUid || '')}`
                     : l.creditMinor > 0
-                    ? `${uid === currentUserUid ? 'You' : getName(uid)} paid ${formatCurrency(l.costMinor, currency)}`
-                    : `${getName(l.paidByUid || '') || 'Someone'} paid ${formatCurrency(l.costMinor, currency)}`;
+                    ? `Paid by ${who} · total ${formatCurrency(l.costMinor, currency)}`
+                    : `Paid by ${getName(l.paidByUid || '') || 'someone'} · total ${formatCurrency(l.costMinor, currency)}`;
                 return (
                   <div key={l.key} className="flex items-start gap-2.5 px-3.5 py-2.5 min-w-0">
                     <span className="text-lg leading-6 flex-shrink-0">{l.entryEmoji}</span>
@@ -197,13 +168,14 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                         {l.occurredAt ? ` · ${formatDate(l.occurredAt)}` : ''}
                       </span>
                     </div>
-                    <div className="text-xs flex-shrink-0 text-right">
-                      {l.debitMinor > 0 ? (
-                        <Amount value={l.debitMinor} currency={currency} tone="debit" />
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                          {l.kind === 'settlement' ? 'Settled' : 'No share'}
-                        </span>
+                    <div className="flex flex-col items-end gap-0.5 text-xs flex-shrink-0">
+                      {l.creditMinor > 0 && <LabeledAmount label="Paid" value={l.creditMinor} currency={currency} />}
+                      {l.debitMinor > 0 && (
+                        <LabeledAmount
+                          label={l.kind === 'settlement' ? 'Received' : 'Share'}
+                          value={l.debitMinor}
+                          currency={currency}
+                        />
                       )}
                     </div>
                   </div>
@@ -265,7 +237,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                 : formatDate(first.occurredAt)}
             </span>
             {!isSettlements && payersLabel && (
-              <span className="block text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate">
+              <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
                 Paid by {payersLabel}
               </span>
             )}
@@ -282,9 +254,10 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
 
         {isOpen && (
           <div className="border-t border-slate-200/70 dark:border-slate-700/60">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
               <span>Person</span>
-              <span className="text-right">{isSettlements ? 'Paid / Received' : 'Share'}</span>
+              <span className="text-right">Paid</span>
+              <span className="text-right">{isSettlements ? 'Received' : 'Share'}</span>
             </div>
             <div className="divide-y divide-slate-200/60 dark:divide-slate-700/50">
               {people.map((uid) => {
@@ -292,7 +265,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                 return (
                   <div
                     key={uid}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3.5 py-2 text-xs"
+                    className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 px-3.5 py-2 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Avatar src={getPhotoURL(uid)} name={getName(uid)} size="xs" />
@@ -300,20 +273,11 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                         {nameWithYou(uid)}
                       </span>
                     </div>
-                    <span className="text-right">
-                      {isSettlements ? (
-                        t.creditMinor > 0 ? (
-                          <span className="font-bold text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                            Paid {formatCurrency(t.creditMinor, currency)}
-                          </span>
-                        ) : (
-                          <Amount value={t.debitMinor} currency={currency} tone="debit" muted />
-                        )
-                      ) : t.debitMinor > 0 ? (
-                        <Amount value={t.debitMinor} currency={currency} tone="debit" muted />
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-400">No share</span>
-                      )}
+                    <span className="text-right font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
+                      {t.creditMinor > 0 ? formatCurrency(t.creditMinor, currency) : <span className="text-slate-400 font-bold">—</span>}
+                    </span>
+                    <span className="text-right font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
+                      {t.debitMinor > 0 ? formatCurrency(t.debitMinor, currency) : <span className="text-slate-400 font-bold">—</span>}
                     </span>
                   </div>
                 );
@@ -357,16 +321,11 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-        <span className="inline-flex items-center gap-1">
-          <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-          <strong className="text-emerald-600 dark:text-emerald-400">Credited</strong> = total amount you paid (shown in the summary only)
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <ArrowDownLeft className="w-3.5 h-3.5 text-rose-500" />
-          <strong className="text-rose-600 dark:text-rose-400">Debited</strong> = your share of each item (or settlement received)
-        </span>
-      </div>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+        <strong className="text-slate-800 dark:text-white">Paid</strong> = amount paid by that person ·{' '}
+        <strong className="text-slate-800 dark:text-white">Share</strong> = their share of the item. Settlement
+        payments made show under Paid; payments received show as Received and count towards Share.
+      </p>
 
       {mode === 'names' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">

@@ -15,6 +15,10 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
+    LocalNotifications: {
+      smallIcon: 'ic_stat_splitify',
+      iconColor: '#16AA88',
+    },
     GoogleAuth: {
       scopes: ['profile', 'email'],
       serverClientId: '268134159684-91qvrjihpdui4rrdsd8irfv4vq2u99a5.apps.googleusercontent.com',

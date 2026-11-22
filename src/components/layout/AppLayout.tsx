@@ -4,9 +4,15 @@ import { Navbar } from './Navbar';
 import { BottomNav } from './BottomNav';
 import { NetworkStatusBanner } from '@/components/common/NetworkStatusBanner';
 import { useAndroidNativeBridge } from '@/hooks/useAndroidNativeBridge';
+import { usePhoneNotifications } from '@/hooks/usePhoneNotifications';
+import { useAuth } from '@/app/providers/AuthContext';
+import { useNotifications } from '@/app/providers/NotificationContext';
 
 export const AppLayout: React.FC = () => {
   useAndroidNativeBridge();
+  const { user } = useAuth();
+  const { notifications, loaded } = useNotifications();
+  usePhoneNotifications(user?.uid, notifications, loaded);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] dark:bg-[#0D1B2A] text-slate-800 dark:text-slate-100 transition-colors">

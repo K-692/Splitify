@@ -229,6 +229,19 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
+  const previousExpenseEntries = useMemo(() => {
+    const list: Array<{ name: string; costMinor?: number; usedAt?: number }> = [];
+    for (const it of items) {
+      if (it.deleted || it.isCategory || it.isSettlementsItem) continue;
+      list.push({ name: it.name, costMinor: it.costMinor, usedAt: it.occurredAt || it.createdAt });
+    }
+    for (const ex of expenses) {
+      if (ex.deleted) continue;
+      list.push({ name: ex.name, costMinor: ex.costMinor, usedAt: ex.occurredAt || ex.createdAt });
+    }
+    return list;
+  }, [items, expenses]);
+
   const individualLedger = useMemo(() => {
     if (!event) return [];
     return buildIndividualLedger(items, expenses, settlements, event.slots || {});
@@ -2272,6 +2285,7 @@ export const EventDetailsPage: React.FC = () => {
 
       {/* Expense Modal (Add/Edit) */}
       <ExpenseModal
+        previousEntries={previousExpenseEntries}
         isOpen={isExpenseModalOpen}
         onClose={() => {
           setIsExpenseModalOpen(false);

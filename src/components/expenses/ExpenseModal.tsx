@@ -11,7 +11,8 @@ import {
 import { Avatar } from '@/components/common/Avatar';
 import { getFirstName } from '@/utils/name';
 import { getTodayLocalDateString } from '@/utils/date';
-import { Check, AlertCircle, Calendar, Clock, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { getExpenseSuggestions, recordExpenseNames, SuggestionSource } from '@/utils/expenseSuggestions';
+import { Check, AlertCircle, Calendar, Clock, Plus, Trash2, ArrowRight, History } from 'lucide-react';
 
 export interface StagedSubitem {
   id: string;
@@ -64,6 +65,8 @@ interface ExpenseModalProps {
       occurredAt?: number;
     }>
   ) => Promise<void>;
+  /** Earlier expense names in this event, used for name suggestions */
+  previousEntries?: SuggestionSource[];
 }
 
 export const ExpenseModal: React.FC<ExpenseModalProps> = ({
@@ -77,8 +80,10 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   title,
   onSave,
   onSaveCategoryWithSubitems,
+  previousEntries = [],
 }) => {
   const isEditing = Boolean(initialExpense || initialItem);
+  const [nameFocused, setNameFocused] = useState(false);
 
   // List of assignable people: all joined members + all unclaimed expected person slots
   const assignablePeople = React.useMemo(() => {
@@ -200,6 +205,19 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const handleNameChange = (val: string) => {
     setName(val);
     setEmoji(getEmojiForName(val));
+  };
+
+  const nameSuggestions = React.useMemo(
+    () => (isOpen ? getExpenseSuggestions(name, previousEntries) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isOpen, name, previousEntries]
+  );
+
+  const applySuggestion = (suggestion: { name: string; lastCostMinor?: number }) => {
+    handleNameChange(suggestion.name);
+    if (!costInput && suggestion.lastCostMinor && suggestion.lastCostMinor > 0) {
+      setCostInput((suggestion.lastCostMinor / 100).toString());
+    }
   };
 
   const handleCategoryNameChange = (val: string) => {
@@ -365,6 +383,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       try {
         if (onSaveCategoryWithSubitems) {
           await onSaveCategoryWithSubitems(categoryName.trim(), finalSubs);
+          recordExpenseNames(finalSubs.map((sub) => ({ name: sub.name, costMinor: sub.costMinor })));
         } else {
           // Fallback if not supplied
           for (const sub of finalSubs) {
@@ -421,6 +440,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
         expenseTime,
         occurredAt,
       });
+      recordExpenseNames([{ name: name.trim(), costMinor }]);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save expense');
@@ -592,10 +612,39 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                     placeholder={hasSubitems ? 'e.g. Pizza, Drinks, Hotel Night 1' : 'e.g. Flight Tickets, Dinner, Hotel'}
                     value={name}
                     onChange={(e) => handleNameChange(e.target.value)}
+                    onFocus={() => setNameFocused(true)}
+                    onBlur={() => setNameFocused(false)}
+                    autoComplete="off"
                     required
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold text-base sm:text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none"
                   />
                 </div>
+                {nameFocused && nameSuggestions.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" role="listbox" aria-label="Suggestions from earlier expenses">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400 mr-0.5">
+                      <History className="w-3 h-3" /> Recent
+                    </span>
+                    {nameSuggestions.map((sug) => (
+                      <button
+                        key={sug.name}
+                        type="button"
+                        role="option"
+                        aria-selected={false}
+                        // Keep focus in the input so the keyboard stays open on mobile
+                        onPointerDown={(e) => e.preventDefault()}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => applySuggestion(sug)}
+                        className="inline-flex items-center gap-1 max-w-full px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-teal-400 active:scale-95 transition"
+                      >
+                        <span>{getEmojiForName(sug.name)}</span>
+                        <span className="truncate">{sug.name}</span>
+                        {sug.lastCostMinor ? (
+                          <span className="text-slate-400 font-medium">· {formatCurrency(sug.lastCostMinor, event.currency)}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>

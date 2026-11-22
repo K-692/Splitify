@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome status-bar icon: four-quadrant circle with a centre hub (Splitify mark) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,2.05V8.1A4,4 0,0 0,8.1 11H2.05A10,10 0,0 1,11 2.05Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,2.05A10,10 0,0 1,21.95 11H15.9A4,4 0,0 0,13 8.1Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2.05,13H8.1A4,4 0,0 0,11 15.9V21.95A10,10 0,0 1,2.05 13Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15.9,13H21.95A10,10 0,0 1,13 21.95V15.9A4,4 0,0 0,15.9 13Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10a2,2 0,1 0,0.001 0Z" />
+</vector>

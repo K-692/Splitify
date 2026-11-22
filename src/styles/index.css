@@ -44,3 +44,22 @@ body {
 html.dark body {
   background-color: #0D1B2A;
 }
+
+/* Modal scroll area: scroll inside the modal only, never chain to the page */
+.modal-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+/* iOS zooms the page when focusing inputs smaller than 16px, which shifts
+   fixed overlays off-screen. Keep form controls at 16px on touch phones. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}

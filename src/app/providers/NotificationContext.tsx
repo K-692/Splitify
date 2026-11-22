@@ -4,6 +4,8 @@ import { dataService } from '@/services/dataService';
 import { useAuth } from './AuthContext';
 
 interface NotificationContextType {
+  /** True once the first snapshot for the signed-in user has arrived */
+  loaded: boolean;
   notifications: AppNotification[];
   unreadCount: number;
   markAsRead: (id: string) => Promise<void>;
@@ -16,8 +18,10 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    setLoaded(false);
     if (!user) {
       setNotifications([]);
       return;
@@ -25,6 +29,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const unsubscribe = dataService.subscribeNotifications(user.uid, (items) => {
       setNotifications(items);
+      setLoaded(true);
     });
 
     return () => unsubscribe();
@@ -55,6 +60,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     <NotificationContext.Provider
       value={{
         notifications,
+        loaded,
         unreadCount,
         markAsRead,
         markAllAsRead,
