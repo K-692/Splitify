@@ -13,6 +13,7 @@ import {
   orderBy,
   writeBatch,
   runTransaction,
+  deleteField,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase/config';
 import {
@@ -180,6 +181,27 @@ export const dataService = {
     const sanitized = sanitizeForFirestore(newEvent);
     const ref = await addDoc(collection(db, 'events'), sanitized);
     return ref.id;
+  },
+
+  /**
+   * Hide or unhide an event on this user's Home screen. Stored on the user's
+   * own member entry, so it syncs across devices and does not affect others.
+   */
+  async setEventHidden(eventId: string, uid: string, hidden: boolean): Promise<void> {
+    const now = Date.now();
+    if (!isFirebaseConfigured() || !db) {
+      const all = getLocal<SplitifyEvent[]>('events', []);
+      const ev = all.find((e) => e.id === eventId);
+      if (ev?.members?.[uid]) {
+        ev.members[uid] = { ...ev.members[uid], hidden, hiddenAt: hidden ? now : undefined };
+        setLocal('events', all);
+      }
+      return;
+    }
+    await updateDoc(doc(db, 'events', eventId), {
+      [`members.${uid}.hidden`]: hidden,
+      [`members.${uid}.hiddenAt`]: hidden ? now : deleteField(),
+    });
   },
 
   async updateEventName(eventId: string, newName: string, editor: UserProfile): Promise<void> {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { SplitifyEvent, EventItem, ExpenseEntry, SettlementEntry } from '@/types';
@@ -10,6 +10,10 @@ import { ShareInviteModal } from '@/components/events/ShareInviteModal';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { formatCurrency } from '@/utils/currency';
 import { getFirstName } from '@/utils/name';
+import { resolvePersonName } from '@/utils/people';
+import { searchHome, EventSearchData } from '@/domain/search/homeSearch';
+import { HomeSearchResults } from '@/components/home/HomeSearchResults';
+import { HiddenEventsSection } from '@/components/home/HiddenEventsSection';
 import {
   Plus,
   Share2,
@@ -17,6 +21,9 @@ import {
   TrendingUp,
   TrendingDown,
   CheckCircle2,
+  Search,
+  X,
+  EyeOff,
 } from 'lucide-react';
 
 interface EventFinancialStats {
@@ -44,6 +51,12 @@ export const HomePage: React.FC = () => {
 
   // Share Modal
   const [sharingEvent, setSharingEvent] = useState<SplitifyEvent | null>(null);
+
+  // Search + hide/unhide
+  const [searchQuery, setSearchQuery] = useState('');
+  const [eventData, setEventData] = useState<Record<string, EventSearchData>>({});
+  const [hidingIds, setHidingIds] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState<string | null>(null);
 
   // Subscribe to user events
   useEffect(() => {
@@ -86,14 +99,19 @@ export const HomePage: React.FC = () => {
         }));
       };
 
+      const publishSearchData = () =>
+        setEventData((prev) => ({ ...prev, [ev.id]: { items: itemsList, expenses: expensesList } }));
+
       const unsubItems = dataService.subscribeItems(ev.id, (items) => {
         itemsList = items;
         recalc();
+        publishSearchData();
       });
 
       const unsubExpenses = dataService.subscribeExpenses(ev.id, (expenses) => {
         expensesList = expenses;
         recalc();
+        publishSearchData();
       });
 
       const unsubSettlements = dataService.subscribeSettlements(ev.id, (settlements) => {
@@ -145,6 +163,42 @@ export const HomePage: React.FC = () => {
     }
   };
 
+  const getPersonName = (ev: SplitifyEvent, uid: string) => resolvePersonName(uid, ev.members, ev.slots);
+
+  const visibleEvents = useMemo(
+    () => events.filter((ev) => !(user && ev.members?.[user.uid]?.hidden)),
+    [events, user]
+  );
+  const hiddenEvents = useMemo(
+    () => events.filter((ev) => Boolean(user && ev.members?.[user.uid]?.hidden)),
+    [events, user]
+  );
+
+  const searchResult = useMemo(
+    () => (user && searchQuery.trim() ? searchHome(searchQuery, events, eventData, user.uid, getPersonName) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [searchQuery, events, eventData, user]
+  );
+  const searchDataLoading = events.some((ev) => !eventData[ev.id]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2500);
+  };
+
+  const handleSetHidden = async (ev: SplitifyEvent, hidden: boolean) => {
+    if (!user) return;
+    setHidingIds((prev) => ({ ...prev, [ev.id]: true }));
+    try {
+      await dataService.setEventHidden(ev.id, user.uid, hidden);
+      showToast(hidden ? `"${ev.name}" moved to Hidden events` : `"${ev.name}" is back on Home`);
+    } catch (err: any) {
+      alert(err.message || 'Could not update the event');
+    } finally {
+      setHidingIds((prev) => ({ ...prev, [ev.id]: false }));
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -171,6 +225,46 @@ export const HomePage: React.FC = () => {
         </Button>
       </div>
 
+      {/* Search events and items (including hidden events) */}
+      {events.length > 0 && (
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setSearchQuery('');
+            }}
+            placeholder="Search events, items, categories or people"
+            aria-label="Search events and items"
+            enterKeyHint="search"
+            className="w-full pl-10 pr-10 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15263C] text-slate-900 dark:text-white text-sm font-semibold placeholder:text-slate-400 focus:ring-2 focus:ring-teal-500 focus:outline-none shadow-sm [&::-webkit-search-cancel-button]:hidden"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {searchResult ? (
+        <HomeSearchResults
+          query={searchQuery}
+          result={searchResult}
+          loadingItems={searchDataLoading}
+          getPersonName={getPersonName}
+          onOpenEvent={(ev) => navigate(`/events/${ev.id}`)}
+          onOpenItem={(ev, itemName) => navigate(`/events/${ev.id}?q=${encodeURIComponent(itemName)}`)}
+        />
+      ) : (
+      <>
       {/* Events List — No artificial loading screen */}
       {events.length === 0 ? (
         <div className="text-center py-16 px-6 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 shadow-sm">
@@ -193,9 +287,15 @@ export const HomePage: React.FC = () => {
             Create Event
           </Button>
         </div>
+      ) : visibleEvents.length === 0 ? (
+        <div className="text-center py-10 px-6 bg-white dark:bg-[#15263C] rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+          <EyeOff className="w-7 h-7 mx-auto text-slate-400 mb-2" />
+          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">All your events are hidden</p>
+          <p className="text-xs text-slate-400 mt-1">Open Hidden events below to bring one back.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {events.map((ev) => {
+          {visibleEvents.map((ev) => {
             const memberList = Object.values(ev.members || {});
             const stats = eventStats[ev.id];
             const totalMinor = stats ? stats.totalExpenseMinor : 0;
@@ -226,6 +326,21 @@ export const HomePage: React.FC = () => {
                     </div>
                   </div>
 
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                  {/* Hide button */}
+                  <button
+                    type="button"
+                    disabled={hidingIds[ev.id]}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSetHidden(ev, true);
+                    }}
+                    title="Hide from Home"
+                    aria-label={`Hide ${ev.name} from Home`}
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+                  >
+                    <EyeOff className="w-4 h-4" />
+                  </button>
                   {/* Share button */}
                   <button
                     type="button"
@@ -238,6 +353,7 @@ export const HomePage: React.FC = () => {
                   >
                     <Share2 className="w-4 h-4" />
                   </button>
+                  </div>
                 </div>
 
                 {/* Financial Summary */}
@@ -311,6 +427,24 @@ export const HomePage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {events.length > 0 && (
+        <HiddenEventsSection
+          events={hiddenEvents}
+          totals={Object.fromEntries(hiddenEvents.map((ev) => [ev.id, eventStats[ev.id]?.totalExpenseMinor]))}
+          busyIds={hidingIds}
+          onUnhide={(ev) => handleSetHidden(ev, false)}
+          onOpen={(ev) => navigate(`/events/${ev.id}`)}
+        />
+      )}
+      </>
+      )}
+
+      {toast && (
+        <div role="status" className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold shadow-xl max-w-[90vw] text-center">
+          {toast}
         </div>
       )}
 

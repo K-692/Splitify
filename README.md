@@ -10,12 +10,19 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Web_App-Open-16AA88?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the web app" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.5.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.5.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.6.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
 </p>
 
 ---
 
 ## Screenshots
+
+<p align="center">
+  <img src="./docs/screenshots/home-search.jpg" alt="Home search across events and items" width="200" />
+  <img src="./docs/screenshots/home-hidden-events.jpg" alt="Hidden events folder on Home" width="200" />
+</p>
+
+<p align="center"><sub>Search events and items from Home (hidden events included) · Hidden events folder</sub></p>
 
 <p align="center">
   <img src="./docs/screenshots/individual-expenses-names.jpg" alt="Individual Expenses grouped by name" width="200" />
@@ -31,7 +38,7 @@
 | Platform | Link |
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
-| Android (v1.5.0) | [Splitify-v1.5.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.5.0.apk) — Android 8.0 or later |
+| Android (v1.6.0) | [Splitify-v1.6.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.0.apk) — Android 8.0 or later |
 | Release notes | [GitHub Releases](https://github.com/K-692/Splitify/releases/latest) |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
@@ -40,6 +47,8 @@
 
 **Events and expenses**
 - Create an event, add expenses, and optionally group them into categories with sub-items.
+- **Search from Home:** one search bar finds events and any item inside them — by item, category, note or the person who paid — including events you've hidden. Results are grouped into Events and Items, with matches highlighted; opening an item jumps to its event with the list already filtered.
+- **Hide events:** hide an event to remove its card from Home. Hidden events live in a **Hidden events** folder at the bottom of Home, where they can be opened or unhidden. Hiding only affects your own view.
 - Split equally, or enter exact amounts — the unassigned remainder is distributed automatically.
 - **Name suggestions:** while typing an expense name, earlier names from the event and from your recent expenses appear as chips; tapping one fills the name and its last amount.
 - All amounts are stored in whole paise, so totals always balance exactly.
@@ -62,7 +71,7 @@
 
 **General**
 - Google Sign-In, real-time sync across web and Android, in-app notifications.
-- **Android phone notifications:** every new in-app notification (expenses, payments, reminders, invitations) also appears in the phone's notification tray while the app is open or running in the background; tapping it opens the event.
+- **Android push notifications:** every new in-app notification (expenses, payments, reminders, invitations) also arrives as a phone notification — even when the app is closed — through Firebase Cloud Messaging. Tapping it opens the event. Android 13+ asks for permission the first time.
 - Pop-up forms scroll on their own and stay above the on-screen keyboard on iPhone and Android; the page behind them no longer moves.
 - Light and dark themes; layouts tested down to 320 px wide.
 - Plain-text expense report for sharing.
@@ -87,6 +96,7 @@ src/
   services/       Firestore data access (with a local demo mode) and auth
   utils/          Currency, dates, name resolution, report export
 tests/            Unit and component tests
+functions/        Cloud Function that sends push notifications
 android/          Capacitor Android project
 ```
 
@@ -120,4 +130,11 @@ Without Firebase credentials the app runs in a local **demo mode** backed by bro
 
 ## Deployment
 
-Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Release APKs are committed to the repository root and linked above.
+Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.6.0`) publishes a GitHub Release with the APK committed at the repository root.
+
+Backend (Firestore rules and the push-notification Cloud Function) is deployed with the Firebase CLI. Cloud Functions require the project to be on the **Blaze** plan:
+
+```bash
+npx firebase-tools login
+npx firebase-tools deploy --project splitify-151bd --only firestore:rules,functions
+```

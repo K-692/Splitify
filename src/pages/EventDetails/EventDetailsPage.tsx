@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthContext';
 import { useNotifications } from '@/app/providers/NotificationContext';
 import {
@@ -120,7 +120,9 @@ export const EventDetailsPage: React.FC = () => {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
+  const [searchParams] = useSearchParams();
+  // Opened from Home search: pre-filter the expense list to the chosen item
+  const [expenseSearchQuery, setExpenseSearchQuery] = useState(() => searchParams.get('q') || '');
   const [sendingReminders, setSendingReminders] = useState<Record<string, boolean>>({});
   const [, setCooldownTick] = useState(0);
 

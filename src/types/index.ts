@@ -48,6 +48,8 @@ export interface EventMember {
   slotId?: string; // Assigned slot in the event, if any
   scope?: 'full' | 'selected_items'; // Access scope
   allowedItemIds?: string[]; // Specific items authorized for selected_items scope
+  hidden?: boolean; // This member has hidden the event from their Home screen
+  hiddenAt?: number;
 }
 
 export interface EventSlot {

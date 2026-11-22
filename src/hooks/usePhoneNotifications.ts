@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { App as CapApp } from '@capacitor/app';
+import { savePushToken } from '@/services/pushService';
 import { AppNotification } from '@/types';
 
 const CHANNEL_ID = 'splitify_updates';
@@ -65,6 +68,64 @@ export function usePhoneNotifications(userUid: string | undefined, notifications
   const navigate = useNavigate();
   const ready = useRef(false);
   const isNative = Capacitor.isNativePlatform();
+  // True once this device's push token is stored, i.e. the server will deliver
+  // alerts while the app is closed or in the background.
+  const pushActive = useRef(false);
+  const appActive = useRef(true);
+  const sessionStart = useRef(Date.now());
+
+  // Push registration (FCM) + app foreground tracking
+  useEffect(() => {
+    if (!isNative || !userUid) return;
+    const handles: Array<Promise<{ remove: () => Promise<void> }>> = [];
+
+    handles.push(
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        appActive.current = isActive;
+      })
+    );
+    handles.push(
+      PushNotifications.addListener('registration', async ({ value }) => {
+        pushActive.current = await savePushToken(userUid, value, Capacitor.getPlatform());
+      })
+    );
+    handles.push(
+      PushNotifications.addListener('registrationError', () => {
+        pushActive.current = false;
+      })
+    );
+    handles.push(
+      PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        const eventId = action.notification.data?.eventId as string | undefined;
+        navigate(eventId ? `/events/${eventId}` : '/notifications');
+      })
+    );
+
+    (async () => {
+      try {
+        let perm = await PushNotifications.checkPermissions();
+        if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
+          perm = await PushNotifications.requestPermissions();
+        }
+        if (perm.receive === 'granted') {
+          await PushNotifications.createChannel({
+            id: CHANNEL_ID,
+            name: 'Splitify updates',
+            description: 'Expenses, payments, reminders and invitations',
+            importance: 4,
+            visibility: 1,
+          });
+          await PushNotifications.register();
+        }
+      } catch {
+        /* Push unavailable — local mirroring below still works while the app runs */
+      }
+    })();
+
+    return () => {
+      handles.forEach((h) => h.then((l) => l.remove()).catch(() => undefined));
+    };
+  }, [isNative, userUid, navigate]);
 
   // One-time setup: permission, channel, tap handler
   useEffect(() => {
@@ -101,8 +162,15 @@ export function usePhoneNotifications(userUid: string | undefined, notifications
   // Show new notifications as they arrive from Firestore
   useEffect(() => {
     if (!isNative || !userUid || !loaded) return;
-    const { toShow, seen } = selectNewPhoneNotifications(notifications, readSeen(userUid));
+    const { toShow: candidates, seen } = selectNewPhoneNotifications(notifications, readSeen(userUid));
     writeSeen(userUid, seen);
+    // With push active the server already shows alerts while the app is in the
+    // background or closed, so only mirror ones that arrive while it is open.
+    const toShow = pushActive.current
+      ? appActive.current
+        ? candidates.filter((n) => (n.createdAt || 0) >= sessionStart.current - 5000)
+        : []
+      : candidates;
     if (toShow.length === 0) return;
     LocalNotifications.schedule({
       notifications: toShow.map((n) => ({
