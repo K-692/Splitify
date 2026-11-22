@@ -44,7 +44,7 @@ export const Navbar: React.FC = () => {
           <img
             src={`${import.meta.env.BASE_URL}assets/app-logo.png`}
             alt=""
-            className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl shadow-sm group-hover:scale-105 transition-transform"
+            className="h-9 w-9 sm:h-10 sm:w-10 object-contain group-hover:scale-105 transition-transform"
           />
           <span className="text-xl sm:text-2xl font-black tracking-tight text-[#203D62] dark:text-white">
             Split<span className="font-semibold text-[#16AA88]">ify</span>

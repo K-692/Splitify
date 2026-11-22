@@ -74,7 +74,7 @@ export const LoginPage: React.FC = () => {
         <img
           src={`${import.meta.env.BASE_URL}assets/app-logo.png`}
           alt=""
-          className="w-24 h-24 sm:w-28 sm:h-28 mx-auto rounded-3xl shadow-lg mb-4"
+          className="w-24 h-24 sm:w-28 sm:h-28 mx-auto object-contain drop-shadow-md mb-4"
         />
         <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-[#203D62] dark:text-white mb-2">
           Split<span className="font-semibold text-[#16AA88]">ify</span>
