@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
-import { UserProfile } from '@/types';
+import { UserProfile, PaymentAllocation } from '@/types';
+import { AllocatableShare, fitSelection, buildAllocations } from '@/domain/calculations/paymentAllocation';
+import { PaymentItemPicker } from './PaymentItemPicker';
 import { formatCurrency, toMinorUnits } from '@/utils/currency';
 import { getTodayLocalDateString } from '@/utils/date';
 import { AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
@@ -13,6 +15,9 @@ interface PaymentDetailsModalProps {
   creditor: { uid: string; displayName: string } | null;
   maxAmountMinor: number;
   currency: string;
+  /** Payer's unsettled shares that this payment can optionally be linked to */
+  allocatable?: AllocatableShare[];
+  getPersonName?: (uid: string) => string;
   onSubmit: (data: {
     debtorUid: string;
     debtorName: string;
@@ -25,6 +30,7 @@ interface PaymentDetailsModalProps {
     paidDate: string;
     paidTime: string;
     occurredAt: number;
+    allocations?: PaymentAllocation[];
   }) => Promise<void>;
 }
 
@@ -35,6 +41,8 @@ export const PaymentDetailsModal: React.FC<PaymentDetailsModalProps> = ({
   creditor,
   maxAmountMinor,
   currency,
+  allocatable = [],
+  getPersonName = (uid) => uid,
   onSubmit,
 }) => {
   if (!creditor) return null;
@@ -55,6 +63,7 @@ export const PaymentDetailsModal: React.FC<PaymentDetailsModalProps> = ({
   const [paidTime, setPaidTime] = useState(getCurrentTimeString());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isOpen) {
@@ -66,11 +75,21 @@ export const PaymentDetailsModal: React.FC<PaymentDetailsModalProps> = ({
       setPaidDate(getTodayLocalDateString());
       setPaidTime(getCurrentTimeString());
       setError(null);
+      setSelectedItems(new Set());
     }
   }, [isOpen, maxAmountMinor]);
 
   const amountMinorToPay =
     settlementType === 'full' ? maxAmountMinor : toMinorUnits(customAmountInput);
+
+  // If the amount drops, keep only the selected items that still fit
+  useEffect(() => {
+    setSelectedItems((prev) => {
+      if (prev.size === 0) return prev;
+      const fitted = fitSelection(allocatable, Math.max(0, amountMinorToPay), prev);
+      return fitted.size === prev.size ? prev : fitted;
+    });
+  }, [amountMinorToPay, allocatable]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,6 +123,7 @@ export const PaymentDetailsModal: React.FC<PaymentDetailsModalProps> = ({
         paidDate,
         paidTime,
         occurredAt,
+        allocations: selectedItems.size > 0 ? buildAllocations(allocatable, selectedItems) : undefined,
       });
       onClose();
     } catch (err: any) {
@@ -173,6 +193,17 @@ export const PaymentDetailsModal: React.FC<PaymentDetailsModalProps> = ({
             />
           </div>
         )}
+
+        {/* Optional: which shared items this payment covers */}
+        <PaymentItemPicker
+          candidates={allocatable}
+          selected={selectedItems}
+          onChange={setSelectedItems}
+          amountMinor={Math.max(0, amountMinorToPay)}
+          currency={currency}
+          receiverUid={creditor.uid}
+          getPersonName={getPersonName}
+        />
 
         {/* Payment Method */}
         <div>

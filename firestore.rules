@@ -475,7 +475,7 @@ service cloud.firestore {
                'formattedTimestamp', 'status', 'note',
                'paymentConfirmationId', 'paymentMethod', 'paymentReference', 'paymentNote',
                'paidDate', 'paidTime', 'occurredAt', 'confirmedAt', 'confirmedByUid',
-               'discrepancyNotes'
+               'discrepancyNotes', 'allocations'
              ]) &&
              data.eventId == eventId &&
              data.payerUid is string && data.payerUid.size() >= 1 && data.payerUid.size() <= 128 &&
@@ -501,7 +501,8 @@ service cloud.firestore {
              (!('occurredAt' in data) || data.occurredAt is number) &&
              (!('confirmedAt' in data) || data.confirmedAt is number) &&
              (!('confirmedByUid' in data) || (data.confirmedByUid is string && data.confirmedByUid.size() <= 128)) &&
-             (!('discrepancyNotes' in data) || (data.discrepancyNotes is list && data.discrepancyNotes.size() <= 100));
+             (!('discrepancyNotes' in data) || (data.discrepancyNotes is list && data.discrepancyNotes.size() <= 100)) &&
+             (!('allocations' in data) || (data.allocations is list && data.allocations.size() <= 100));
     }
 
     function isValidPaymentConfirmation(data, eventId) {
@@ -513,7 +514,8 @@ service cloud.firestore {
                'id', 'eventId', 'debtorUid', 'debtorName', 'creditorUid', 'creditorName',
                'amountMinor', 'paymentMethod', 'paymentReference', 'paymentNote',
                'paidDate', 'paidTime', 'occurredAt', 'status', 'createdAt',
-               'confirmedAt', 'confirmedByUid', 'rejectedAt', 'rejectedByUid', 'rejectionReason'
+               'confirmedAt', 'confirmedByUid', 'rejectedAt', 'rejectedByUid', 'rejectionReason',
+               'allocations'
              ]) &&
              data.eventId == eventId &&
              data.debtorUid is string && data.debtorUid.size() >= 1 && data.debtorUid.size() <= 128 &&
@@ -535,7 +537,8 @@ service cloud.firestore {
              (!('confirmedByUid' in data) || (data.confirmedByUid is string && data.confirmedByUid.size() <= 128)) &&
              (!('rejectedAt' in data) || data.rejectedAt is number) &&
              (!('rejectedByUid' in data) || (data.rejectedByUid is string && data.rejectedByUid.size() <= 128)) &&
-             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500));
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500)) &&
+             (!('allocations' in data) || (data.allocations is list && data.allocations.size() <= 100));
     }
 
     function isValidNotification(data, userId) {

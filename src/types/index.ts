@@ -178,6 +178,14 @@ export interface ExpenseEntry {
 
 export type PaymentStatus = 'awaiting_confirmation' | 'completed' | 'rejected';
 
+/** Part of a payment that the payer linked to one expense entry they share in. */
+export interface PaymentAllocation {
+  entryId: string; // standalone item id or sub-item (expense) id
+  itemName: string;
+  amountMinor: number;
+  occurredAt?: number; // when the expense happened, to tell same-named items apart
+}
+
 export interface PaymentConfirmation {
   id: string;
   eventId: string;
@@ -193,6 +201,7 @@ export interface PaymentConfirmation {
   paidTime: string; // "HH:mm" or "10:30 PM"
   occurredAt: number; // UTC timestamp of payment
   status: PaymentStatus;
+  allocations?: PaymentAllocation[];
   createdAt: number;
   confirmedAt?: number;
   confirmedByUid?: string;
@@ -225,6 +234,7 @@ export interface SettlementEntry {
   confirmedByUid?: string;
   status: 'completed' | 'reversed';
   note?: string;
+  allocations?: PaymentAllocation[];
 }
 
 export type NotificationType =

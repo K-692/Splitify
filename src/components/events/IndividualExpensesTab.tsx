@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Users, Layers } from 'lucide-react';
 import { Avatar } from '@/components/common/Avatar';
 import { formatCurrency } from '@/utils/currency';
+import { formatEntryDateTime } from '@/domain/calculations/paymentAllocation';
 import {
   IndividualLedgerLine,
   LedgerTotals,
@@ -30,11 +31,6 @@ const readStoredMode = (): GroupMode => {
   } catch {
     return 'names';
   }
-};
-
-const formatDate = (ts: number): string => {
-  if (!ts) return '';
-  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 /** Neutral (white in dark mode) amount with a small label, e.g. "Paid ₹130" / "Share ₹65". */
@@ -144,15 +140,14 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
               <p className="px-3.5 py-4 text-xs text-center text-slate-400">No expenses yet.</p>
             ) : (
               personLines.map((l) => {
-                const who = uid === currentUserUid ? 'You' : getName(uid);
+                const payerLabel = (pid?: string) =>
+                  pid === currentUserUid ? 'You' : getName(pid || '') || 'someone';
                 const detail =
                   l.kind === 'settlement'
                     ? l.creditMinor > 0
                       ? `To ${getName(l.counterpartyUid || '')}`
                       : `From ${getName(l.counterpartyUid || '')}`
-                    : l.creditMinor > 0
-                    ? `Paid by ${who} · total ${formatCurrency(l.costMinor, currency)}`
-                    : `Paid by ${getName(l.paidByUid || '') || 'someone'} · total ${formatCurrency(l.costMinor, currency)}`;
+                    : `Paid by ${payerLabel(l.paidByUid)} · total ${formatCurrency(l.costMinor, currency)}`;
                 return (
                   <div key={l.key} className="flex items-start gap-2.5 px-3.5 py-2.5 min-w-0">
                     <span className="text-lg leading-6 flex-shrink-0">{l.entryEmoji}</span>
@@ -163,10 +158,15 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                           <span className="font-semibold text-slate-400"> · {l.groupName}</span>
                         )}
                       </span>
-                      <span className="block text-[11px] text-slate-400 truncate">
-                        {detail}
-                        {l.occurredAt ? ` · ${formatDate(l.occurredAt)}` : ''}
-                      </span>
+                      <span className="block text-[11px] text-slate-400 truncate">{detail}</span>
+                      {l.occurredAt ? (
+                        <span className="block text-[11px] text-slate-400 truncate">{formatEntryDateTime(l.occurredAt)}</span>
+                      ) : null}
+                      {l.settledPayments?.map((sp, i) => (
+                        <span key={i} className="block text-[11px] font-semibold text-teal-600 dark:text-teal-400 break-words">
+                          Paid {formatCurrency(sp.amountMinor, currency)} to {getName(sp.toUid)} · {formatEntryDateTime(sp.paidAt)}
+                        </span>
+                      ))}
                     </div>
                     <div className="flex flex-col items-end gap-0.5 text-xs flex-shrink-0">
                       {l.creditMinor > 0 && <LabeledAmount label="Paid" value={l.creditMinor} currency={currency} />}
@@ -196,9 +196,13 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
     for (const l of groupLines) entryCosts.set(l.entryId, l.costMinor);
     const totalCost = [...entryCosts.values()].reduce((a, b) => a + b, 0);
     const entryNames = [...new Set(groupLines.filter((l) => l.isSubitem).map((l) => l.entryName))];
+    // Who originally paid for the item(s) — independent of later linked settlements
     const paidByTotals = new Map<string, number>();
+    const countedEntries = new Set<string>();
     for (const l of groupLines) {
-      if (l.creditMinor > 0) paidByTotals.set(l.personUid, (paidByTotals.get(l.personUid) || 0) + l.creditMinor);
+      if (l.kind !== 'expense' || !l.paidByUid || countedEntries.has(l.entryId)) continue;
+      countedEntries.add(l.entryId);
+      paidByTotals.set(l.paidByUid, (paidByTotals.get(l.paidByUid) || 0) + l.costMinor);
     }
     const payersLabel = [...paidByTotals.entries()]
       .map(([uid, amt]) =>
@@ -234,7 +238,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                 ? `${entryCosts.size} payment${entryCosts.size === 1 ? '' : 's'}`
                 : entryNames.length > 0
                 ? entryNames.join(', ')
-                : formatDate(first.occurredAt)}
+                : formatEntryDateTime(first.occurredAt)}
             </span>
             {!isSettlements && payersLabel && (
               <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">

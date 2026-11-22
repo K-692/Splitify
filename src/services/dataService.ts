@@ -22,6 +22,7 @@ import {
   ExpenseEntry,
   SettlementEntry,
   PaymentConfirmation,
+  PaymentAllocation,
   FriendRequest,
   Friendship,
   EventInvitation,
@@ -1417,6 +1418,7 @@ export const dataService = {
       paidDate: string;
       paidTime: string;
       occurredAt?: number;
+      allocations?: PaymentAllocation[];
     },
     user: UserProfile
   ): Promise<string> {
@@ -1442,6 +1444,23 @@ export const dataService = {
       throw new Error('Payment amount must be greater than zero.');
     }
 
+    // Optional item links: whole-paise amounts, unique entries, never more than the payment
+    const allocations = (params.allocations || [])
+      .filter((a) => a && a.entryId && a.amountMinor > 0)
+      .slice(0, 100)
+      .map((a) => ({
+        entryId: String(a.entryId),
+        itemName: String(a.itemName || '').slice(0, 100),
+        amountMinor: Math.round(a.amountMinor),
+        ...(a.occurredAt ? { occurredAt: a.occurredAt } : {}),
+      }));
+    if (new Set(allocations.map((a) => a.entryId)).size !== allocations.length) {
+      throw new Error('Each item can only be selected once.');
+    }
+    if (allocations.reduce((sum, a) => sum + a.amountMinor, 0) > amountMinor) {
+      throw new Error('Selected items add up to more than the amount paid.');
+    }
+
     const now = Date.now();
     const parsedTime = new Date(`${paidDate}T${paidTime}`).getTime();
     const occurredAt = params.occurredAt || (!isNaN(parsedTime) ? parsedTime : now);
@@ -1460,6 +1479,7 @@ export const dataService = {
       paidTime,
       occurredAt,
       status: 'awaiting_confirmation',
+      ...(allocations.length > 0 ? { allocations } : {}),
       createdAt: now,
     };
 
@@ -1565,6 +1585,9 @@ export const dataService = {
       confirmedByUid: creditorUser.uid,
       status: 'completed',
       note: confirmation.paymentNote || '',
+      ...(confirmation.allocations && confirmation.allocations.length > 0
+        ? { allocations: confirmation.allocations }
+        : {}),
     };
 
     let settlementId: string;

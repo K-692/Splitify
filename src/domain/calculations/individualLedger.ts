@@ -31,6 +31,8 @@ export interface IndividualLedgerLine {
   creditMinor: number;
   debitMinor: number;
   occurredAt: number;
+  /** Settlement payments the person linked to this item (included in creditMinor) */
+  settledPayments?: Array<{ amountMinor: number; toUid: string; paidAt: number }>;
 }
 
 export interface LedgerTotals {
@@ -147,6 +149,18 @@ export function buildIndividualLedger(
     const payer = resolveUid(s.payerUid);
     const receiver = resolveUid(s.receiverUid);
     const occurredAt = s.occurredAt || s.createdAt || 0;
+
+    // Amounts the payer linked to specific items are shown as Paid on those items
+    let linkedMinor = 0;
+    for (const a of s.allocations || []) {
+      const line = payer ? lines.find((l) => l.kind === 'expense' && l.entryId === a.entryId && l.personUid === payer) : undefined;
+      const amt = Math.min(a.amountMinor || 0, s.amountMinor - linkedMinor);
+      if (!line || amt <= 0) continue;
+      line.creditMinor += amt;
+      (line.settledPayments ||= []).push({ amountMinor: amt, toUid: receiver, paidAt: occurredAt });
+      linkedMinor += amt;
+    }
+    const unlinkedMinor = s.amountMinor - linkedMinor;
     const base = {
       kind: 'settlement' as const,
       groupId: SETTLEMENTS_GROUP_ID,
@@ -159,14 +173,14 @@ export function buildIndividualLedger(
       paidByUid: payer,
       occurredAt,
     };
-    if (payer) {
+    if (payer && unlinkedMinor > 0) {
       lines.push({
         ...base,
         key: `${s.id}:${payer}:paid`,
         personUid: payer,
         entryName: 'Settlement paid',
         counterpartyUid: receiver,
-        creditMinor: s.amountMinor,
+        creditMinor: unlinkedMinor,
         debitMinor: 0,
       });
     }

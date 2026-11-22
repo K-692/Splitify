@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Web_App-Open-16AA88?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the web app" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.3.apk"><img src="https://img.shields.io/badge/Android_APK-v1.6.3-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.7.0.apk"><img src="https://img.shields.io/badge/Android_APK-v1.7.0-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
 </p>
 
 ---
@@ -23,6 +23,13 @@
 </p>
 
 <p align="center"><sub>Search events and items from Home (hidden events included) · Hidden events folder</sub></p>
+
+<p align="center">
+  <img src="./docs/screenshots/payment-link-items.jpg" alt="Linking a payment to items" width="200" />
+  <img src="./docs/screenshots/individual-expenses-linked-payment.jpg" alt="Linked payments shown against items" width="200" />
+</p>
+
+<p align="center"><sub>Link a payment to the items it covers · Linked amounts shown as Paid on those items</sub></p>
 
 <p align="center">
   <img src="./docs/screenshots/individual-expenses-names.jpg" alt="Individual Expenses grouped by name" width="200" />
@@ -38,7 +45,7 @@
 | Platform | Link |
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
-| Android (v1.6.3) | [Splitify-v1.6.3.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.3.apk) — Android 8.0 or later |
+| Android (v1.7.0) | [Splitify-v1.7.0.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.7.0.apk) — Android 8.0 or later |
 | Release notes | [GitHub Releases](https://github.com/K-692/Splitify/releases/latest) |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
@@ -64,9 +71,10 @@
 - **Marking a payment as paid**
   - *By the person receiving the money:* recorded in the ledger immediately.
   - *By the person paying:* sent to the receiver to approve or reject before it is recorded.
+  - **Link to items (optional):** the person paying can tick which of their shares the payment covers, or use **Select all**. The remaining amount updates as items are ticked, and items that would exceed the amount paid can't be selected. Every item shows its date and time, so items with the same name are easy to tell apart. The receiver sees the linked items when confirming.
 - **Individual Expenses** tab: every item with what each person paid and their share, grouped by **Names** or by **Items**.
   - Each item shows **Paid** (the amount that person paid) and **Share** (their share of it).
-  - Payments recorded with **Paid** in Settlements appear here too: money sent shows under Paid, money received shows as Received.
+  - Payments recorded with **Paid** in Settlements appear here too: money sent shows under Paid, money received shows as Received. When a payment was linked to items, its amount appears as **Paid** on each of those items, with who it was paid to and when.
   - Each person's summary shows their total Paid and total Share; when the two match, that person is settled up.
 
 **General**
@@ -129,7 +137,7 @@ Without Firebase credentials the app runs in a local **demo mode** backed by bro
 
 ## Deployment
 
-Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.6.3`) publishes a GitHub Release with the APK committed at the repository root.
+Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.7.0`) publishes a GitHub Release with the APK committed at the repository root.
 
 The backend runs entirely on Firebase's free **Spark** plan (Authentication and Cloud Firestore, no Cloud Functions). Firestore security rules are deployed with the Firebase CLI:
 

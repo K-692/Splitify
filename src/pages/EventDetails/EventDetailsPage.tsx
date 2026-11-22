@@ -8,11 +8,13 @@ import {
   ExpenseEntry,
   SettlementEntry,
   PaymentConfirmation,
+  PaymentAllocation,
   EventMember,
 } from '@/types';
 import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { buildIndividualLedger } from '@/domain/calculations/individualLedger';
+import { getAllocatableShares } from '@/domain/calculations/paymentAllocation';
 import { IndividualExpensesTab } from '@/components/events/IndividualExpensesTab';
 import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
@@ -682,6 +684,7 @@ export const EventDetailsPage: React.FC = () => {
     paidDate: string;
     paidTime: string;
     occurredAt: number;
+    allocations?: PaymentAllocation[];
   }) => {
     if (!event || !user) return;
     try {
@@ -2327,6 +2330,16 @@ export const EventDetailsPage: React.FC = () => {
           }}
           maxAmountMinor={activeDebtorPayment.maxAmountMinor}
           currency={currency}
+          allocatable={getAllocatableShares(
+            user.uid,
+            items,
+            expenses,
+            event.slots || {},
+            settlements,
+            paymentConfirmations,
+            activeDebtorPayment.creditorUid
+          )}
+          getPersonName={(uid) => (uid === user.uid ? 'You' : getPersonDisplayName(uid))}
           onSubmit={handleCreatePaymentConfirmation}
         />
       )}

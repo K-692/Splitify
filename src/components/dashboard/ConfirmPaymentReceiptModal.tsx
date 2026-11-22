@@ -3,6 +3,7 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { PaymentConfirmation } from '@/types';
 import { formatCurrency } from '@/utils/currency';
+import { formatEntryDateTime } from '@/domain/calculations/paymentAllocation';
 import confetti from 'canvas-confetti';
 import { Check, X, AlertCircle, Calendar, CreditCard, FileText } from 'lucide-react';
 
@@ -117,6 +118,27 @@ export const ConfirmPaymentReceiptModal: React.FC<ConfirmPaymentReceiptModalProp
               <span className="font-mono font-bold text-slate-800 dark:text-white">
                 {confirmation.paymentReference}
               </span>
+            </div>
+          )}
+
+          {confirmation.allocations && confirmation.allocations.length > 0 && (
+            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+              <span className="text-slate-400 font-medium block mb-1">For these items:</span>
+              <ul className="space-y-1">
+                {confirmation.allocations.map((a) => (
+                  <li key={a.entryId} className="flex items-start justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="block font-bold text-slate-800 dark:text-white truncate">{a.itemName}</span>
+                      {a.occurredAt ? (
+                        <span className="block text-[11px] text-slate-400">{formatEntryDateTime(a.occurredAt)}</span>
+                      ) : null}
+                    </span>
+                    <span className="font-bold text-slate-800 dark:text-white whitespace-nowrap">
+                      {formatCurrency(a.amountMinor, currency)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
