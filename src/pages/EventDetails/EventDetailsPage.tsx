@@ -15,6 +15,7 @@ import { dataService } from '@/services/dataService';
 import { calculateEventFinancialOverview } from '@/domain/calculations/finance';
 import { buildIndividualLedger } from '@/domain/calculations/individualLedger';
 import { getAllocatableShares } from '@/domain/calculations/paymentAllocation';
+import { findSettledConfirmations } from '@/domain/calculations/confirmationReconcile';
 import { IndividualExpensesTab } from '@/components/events/IndividualExpensesTab';
 import { formatCurrency } from '@/utils/currency';
 import { generatePlainTextExpenseReport } from '@/utils/exportReport';
@@ -190,6 +191,29 @@ export const EventDetailsPage: React.FC = () => {
       event.slots || {}
     );
   }, [event, expenses, settlements, user?.uid, items]);
+
+  // Payment requests that are still "awaiting" but already settled (receiver used
+  // instant Paid, or a duplicate request was confirmed). Hidden everywhere.
+  const settledConfirmationIds = useMemo(
+    () =>
+      financialOverview
+        ? findSettledConfirmations(paymentConfirmations, settlements, financialOverview.settlementSuggestions, event?.slots)
+        : new Set<string>(),
+    [paymentConfirmations, settlements, financialOverview, event?.slots]
+  );
+  const openConfirmations = useMemo(
+    () => paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation' && !settledConfirmationIds.has(pc.id)),
+    [paymentConfirmations, settledConfirmationIds]
+  );
+
+  // The receiver's app closes such requests so they stop showing for the payer too
+  useEffect(() => {
+    if (!event || !user || settledConfirmationIds.size === 0) return;
+    const mine = paymentConfirmations
+      .filter((pc) => settledConfirmationIds.has(pc.id) && pc.creditorUid === user.uid)
+      .map((pc) => pc.id);
+    if (mine.length > 0) dataService.closeSettledConfirmations(event.id, mine, user).catch(() => undefined);
+  }, [settledConfirmationIds, paymentConfirmations, event, user]);
 
   /** Expense / settlement names that still reference a person slot */
   const getSlotUsage = (slotId: string): string[] => {
@@ -1803,11 +1827,11 @@ export const EventDetailsPage: React.FC = () => {
                 const owesYou = debtsOwedToCurrentUser[uid] || 0;
                 const youOwe = userOwesMember[uid] || 0;
 
-                const debtorPending = paymentConfirmations.find(
-                  (pc) => pc.debtorUid === user.uid && pc.creditorUid === uid && pc.status === 'awaiting_confirmation'
+                const debtorPending = openConfirmations.find(
+                  (pc) => pc.debtorUid === user.uid && pc.creditorUid === uid
                 );
-                const creditorPending = paymentConfirmations.find(
-                  (pc) => pc.debtorUid === uid && pc.creditorUid === user.uid && pc.status === 'awaiting_confirmation'
+                const creditorPending = openConfirmations.find(
+                  (pc) => pc.debtorUid === uid && pc.creditorUid === user.uid
                 );
 
                 return (
@@ -1952,14 +1976,14 @@ export const EventDetailsPage: React.FC = () => {
           </div>
 
           {/* 3. Pending Payment Confirmations */}
-          {paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation').length > 0 && (
+          {openConfirmations.length > 0 && (
             <div className="bg-white dark:bg-[#15263C] rounded-3xl p-6 border border-amber-200/80 dark:border-amber-900/40 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                     <Clock className="w-5 h-5 text-amber-500" />
                     Pending Payment Confirmations (
-                    {paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation').length}
+                    {openConfirmations.length}
                     )
                   </h3>
                   <p className="text-xs text-slate-400">
@@ -1973,7 +1997,7 @@ export const EventDetailsPage: React.FC = () => {
 
               <div className="space-y-3">
                 {sortEntriesChronologicalDesc(
-                  paymentConfirmations.filter((pc) => pc.status === 'awaiting_confirmation')
+                  openConfirmations
                 ).map((pc) => {
                   const fromName = getPersonDisplayName(pc.debtorUid) || pc.debtorName || 'Member';
                   const toName = getPersonDisplayName(pc.creditorUid) || pc.creditorName || 'Member';
@@ -2336,7 +2360,7 @@ export const EventDetailsPage: React.FC = () => {
             expenses,
             event.slots || {},
             settlements,
-            paymentConfirmations,
+            openConfirmations,
             activeDebtorPayment.creditorUid
           )}
           getPersonName={(uid) => (uid === user.uid ? 'You' : getPersonDisplayName(uid))}

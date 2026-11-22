@@ -1461,6 +1461,13 @@ export const dataService = {
       throw new Error('Selected items add up to more than the amount paid.');
     }
 
+    // One open request per payer → receiver, so a double tap or a second device
+    // can't create a duplicate that later gets confirmed twice.
+    const openRequests = await dataService.getAwaitingConfirmations(eventId, debtorUid);
+    if (openRequests.some((c) => c.creditorUid === creditorUid)) {
+      throw new Error(`You already have a payment to ${creditorName} awaiting confirmation.`);
+    }
+
     const now = Date.now();
     const parsedTime = new Date(`${paidDate}T${paidTime}`).getTime();
     const occurredAt = params.occurredAt || (!isNaN(parsedTime) ? parsedTime : now);
@@ -1541,6 +1548,55 @@ export const dataService = {
     });
 
     return confirmationId;
+  },
+
+  /** Payment requests from `debtorUid` in this event that are still awaiting confirmation. */
+  async getAwaitingConfirmations(eventId: string, debtorUid: string): Promise<PaymentConfirmation[]> {
+    if (!isFirebaseConfigured() || !db) {
+      return getLocal<PaymentConfirmation[]>(`payment_confirmations_${eventId}`, []).filter(
+        (c) => c.debtorUid === debtorUid && c.status === 'awaiting_confirmation'
+      );
+    }
+    const snap = await getDocs(
+      query(
+        collection(db, 'events', eventId, 'paymentConfirmations'),
+        where('debtorUid', '==', debtorUid),
+        where('status', '==', 'awaiting_confirmation')
+      )
+    );
+    return snap.docs.map((d) => ({ ...(d.data() as PaymentConfirmation), id: d.id }));
+  },
+
+  /**
+   * Closes payment requests addressed to `creditorUser` that are already
+   * settled (covered by a recorded settlement). Only the receiver may do this.
+   */
+  async closeSettledConfirmations(eventId: string, confirmationIds: string[], creditorUser: UserProfile): Promise<void> {
+    if (confirmationIds.length === 0) return;
+    const now = Date.now();
+    if (!isFirebaseConfigured() || !db) {
+      const list = getLocal<PaymentConfirmation[]>(`payment_confirmations_${eventId}`, []);
+      let changed = false;
+      for (const c of list) {
+        if (confirmationIds.includes(c.id) && c.creditorUid === creditorUser.uid && c.status === 'awaiting_confirmation') {
+          c.status = 'completed';
+          c.confirmedAt = now;
+          c.confirmedByUid = creditorUser.uid;
+          changed = true;
+        }
+      }
+      if (changed) setLocal(`payment_confirmations_${eventId}`, list);
+      return;
+    }
+    await Promise.all(
+      confirmationIds.map((id) =>
+        updateDoc(doc(db!, 'events', eventId, 'paymentConfirmations', id), {
+          status: 'completed',
+          confirmedAt: now,
+          confirmedByUid: creditorUser.uid,
+        }).catch((err) => console.warn('Could not close settled payment request', id, err))
+      )
+    );
   },
 
   async confirmPaymentReceipt(
@@ -1769,6 +1825,17 @@ export const dataService = {
       const ref = doc(collection(db, 'events', eventId, 'settlements'));
       settlementId = ref.id;
       await setDoc(ref, sanitizeForFirestore({ ...newSettlement, id: settlementId }));
+    }
+
+    // The receiver has just recorded this debt as paid, so any request the payer
+    // sent for it is settled too — close it instead of leaving it "awaiting".
+    try {
+      const open = (await dataService.getAwaitingConfirmations(eventId, debtorUid)).filter(
+        (c) => c.creditorUid === creditorUser.uid
+      );
+      await dataService.closeSettledConfirmations(eventId, open.map((c) => c.id), creditorUser);
+    } catch (err) {
+      console.warn('Could not close pending requests after direct payment:', err);
     }
 
     const formattedAmount = (amountMinor / 100).toFixed(0);

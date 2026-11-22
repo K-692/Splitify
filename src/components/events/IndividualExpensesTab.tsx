@@ -5,7 +5,6 @@ import { formatCurrency } from '@/utils/currency';
 import { formatEntryDateTime } from '@/domain/calculations/paymentAllocation';
 import {
   IndividualLedgerLine,
-  LedgerTotals,
   groupLedgerBy,
   sumLedger,
 } from '@/domain/calculations/individualLedger';
@@ -41,26 +40,44 @@ const LabeledAmount: React.FC<{ label: string; value: number; currency: string }
   </span>
 );
 
-const TotalsStrip: React.FC<{ totals: LedgerTotals; currency: string }> = ({ totals, currency }) => (
-  <div className="grid grid-cols-2 gap-1.5 text-center">
-    <div className="rounded-xl bg-slate-100 dark:bg-slate-800/80 px-1.5 py-1.5 min-w-0">
-      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        Paid
-      </span>
-      <span className="block text-sm font-black text-slate-900 dark:text-white truncate">
-        {formatCurrency(totals.creditMinor, currency)}
-      </span>
+interface PersonTotals {
+  paidMinor: number;
+  shareMinor: number;
+  receivedMinor: number;
+}
+
+/** Paid out (expenses + settlements sent), own share of items, settlements received. */
+const personTotals = (lines: IndividualLedgerLine[]): PersonTotals => {
+  const t = { paidMinor: 0, shareMinor: 0, receivedMinor: 0 };
+  for (const l of lines) {
+    t.paidMinor += l.creditMinor;
+    if (l.kind === 'settlement') t.receivedMinor += l.debitMinor;
+    else t.shareMinor += l.debitMinor;
+  }
+  return t;
+};
+
+const TotalsStrip: React.FC<{ totals: PersonTotals; currency: string }> = ({ totals, currency }) => {
+  const boxes = [
+    { label: 'Paid', value: totals.paidMinor },
+    { label: 'Share', value: totals.shareMinor },
+    ...(totals.receivedMinor > 0 ? [{ label: 'Received', value: totals.receivedMinor }] : []),
+  ];
+  return (
+    <div className={`grid ${boxes.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 text-center`}>
+      {boxes.map((b) => (
+        <div key={b.label} className="rounded-xl bg-slate-100 dark:bg-slate-800/80 px-1.5 py-1.5 min-w-0">
+          <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            {b.label}
+          </span>
+          <span className="block text-sm font-black text-slate-900 dark:text-white truncate">
+            {formatCurrency(b.value, currency)}
+          </span>
+        </div>
+      ))}
     </div>
-    <div className="rounded-xl bg-slate-100 dark:bg-slate-800/80 px-1.5 py-1.5 min-w-0">
-      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        Share
-      </span>
-      <span className="block text-sm font-black text-slate-900 dark:text-white truncate">
-        {formatCurrency(totals.debitMinor, currency)}
-      </span>
-    </div>
-  </div>
-);
+  );
+};
 
 export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
   lines,
@@ -101,7 +118,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
 
   const renderPersonCard = (uid: string) => {
     const personLines = byPerson.get(uid) || [];
-    const totals = sumLedger(personLines);
+    const totals = personTotals(personLines);
     const isOpen = Boolean(expanded[uid]);
 
     return (
@@ -172,7 +189,9 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                       {l.creditMinor > 0 && <LabeledAmount label="Paid" value={l.creditMinor} currency={currency} />}
                       {l.debitMinor > 0 && (
                         <LabeledAmount
-                          label={l.kind === 'settlement' ? 'Received' : 'Share'}
+                          label={
+                            l.kind === 'settlement' ? 'Received' : l.paidByUid === uid ? 'Own share' : 'Share'
+                          }
                           value={l.debitMinor}
                           currency={currency}
                         />
@@ -258,7 +277,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
 
         {isOpen && (
           <div className="border-t border-slate-200/70 dark:border-slate-700/60">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] gap-x-2 px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
               <span>Person</span>
               <span className="text-right">Paid</span>
               <span className="text-right">{isSettlements ? 'Received' : 'Share'}</span>
@@ -269,7 +288,7 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                 return (
                   <div
                     key={uid}
-                    className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 px-3.5 py-2 text-xs"
+                    className="grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center gap-x-2 px-3.5 py-2 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Avatar src={getPhotoURL(uid)} name={getName(uid)} size="xs" />
@@ -282,6 +301,9 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                     </span>
                     <span className="text-right font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                       {t.debitMinor > 0 ? formatCurrency(t.debitMinor, currency) : <span className="text-slate-400 font-bold">—</span>}
+                      {!isSettlements && t.debitMinor > 0 && (perPerson.get(uid) || []).every((l) => l.paidByUid === uid) && (
+                        <span className="block text-[10px] font-semibold text-teal-600 dark:text-teal-400">covered</span>
+                      )}
                     </span>
                   </div>
                 );
@@ -326,9 +348,10 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
       </div>
 
       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-        <strong className="text-slate-800 dark:text-white">Paid</strong> = amount paid by that person ·{' '}
-        <strong className="text-slate-800 dark:text-white">Share</strong> = their share of the item. Settlement
-        payments made show under Paid; payments received show as Received and count towards Share.
+        <strong className="text-slate-800 dark:text-white">Paid</strong> = money that person paid out ·{' '}
+        <strong className="text-slate-800 dark:text-white">Share</strong> = their part of each item ·{' '}
+        <strong className="text-slate-800 dark:text-white">Received</strong> = money paid back to them. Whoever pays for
+        an item has their own share covered by that payment, so it is never owed.
       </p>
 
       {mode === 'names' ? (
