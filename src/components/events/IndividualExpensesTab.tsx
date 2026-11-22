@@ -230,6 +230,17 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
       .join(', ');
 
     const perPerson = groupLedgerBy(groupLines, 'personUid');
+    // In the Settlements card, a person who paid for items also "paid" their own
+    // share of those items — show it under Paid so the column adds up.
+    const ownShareByPerson = new Map<string, number>();
+    if (isSettlements) {
+      for (const l of lines) {
+        if (l.kind === 'expense' && l.paidByUid === l.personUid && l.debitMinor > 0) {
+          ownShareByPerson.set(l.personUid, (ownShareByPerson.get(l.personUid) || 0) + l.debitMinor);
+        }
+      }
+      for (const uid of ownShareByPerson.keys()) if (!perPerson.has(uid)) perPerson.set(uid, []);
+    }
     const people = [...perPerson.keys()].sort((a, b) =>
       a === currentUserUid ? -1 : b === currentUserUid ? 1 : getName(a).localeCompare(getName(b))
     );
@@ -297,7 +308,21 @@ export const IndividualExpensesTab: React.FC<IndividualExpensesTabProps> = ({
                       </span>
                     </div>
                     <span className="text-right font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
-                      {t.creditMinor > 0 ? formatCurrency(t.creditMinor, currency) : <span className="text-slate-400 font-bold">—</span>}
+                      {(() => {
+                        const own = ownShareByPerson.get(uid) || 0;
+                        const paid = t.creditMinor + own;
+                        if (paid <= 0) return <span className="text-slate-400 font-bold">—</span>;
+                        return (
+                          <>
+                            {formatCurrency(paid, currency)}
+                            {own > 0 && (
+                              <span className="block text-[10px] leading-tight font-semibold text-teal-600 dark:text-teal-400 whitespace-normal">
+                                {t.creditMinor > 0 ? `incl. ${formatCurrency(own, currency)} own share` : 'own share'}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </span>
                     <span className="text-right font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                       {t.debitMinor > 0 ? formatCurrency(t.debitMinor, currency) : <span className="text-slate-400 font-bold">—</span>}
