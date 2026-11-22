@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://k-692.github.io/Splitify/"><img src="https://img.shields.io/badge/Web_App-Open-16AA88?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the web app" /></a>
-  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.2.apk"><img src="https://img.shields.io/badge/Android_APK-v1.6.2-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
+  <a href="https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.3.apk"><img src="https://img.shields.io/badge/Android_APK-v1.6.3-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download the Android APK" /></a>
 </p>
 
 ---
@@ -38,7 +38,7 @@
 | Platform | Link |
 |---|---|
 | Web | [k-692.github.io/Splitify](https://k-692.github.io/Splitify/) |
-| Android (v1.6.2) | [Splitify-v1.6.2.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.2.apk) — Android 8.0 or later |
+| Android (v1.6.3) | [Splitify-v1.6.3.apk](https://github.com/K-692/Splitify/raw/main/Splitify-v1.6.3.apk) — Android 8.0 or later |
 | Release notes | [GitHub Releases](https://github.com/K-692/Splitify/releases/latest) |
 
 **Installing the APK:** download it on your phone, open it, and allow installs from your browser or file manager if prompted. Existing installs update in place and keep your data — everything is stored in your Google account, not on the device.
@@ -129,7 +129,7 @@ Without Firebase credentials the app runs in a local **demo mode** backed by bro
 
 ## Deployment
 
-Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.6.2`) publishes a GitHub Release with the APK committed at the repository root.
+Pushing to `main` runs the GitHub Actions workflows, which test and publish the web app to GitHub Pages and build the Android APK. Pushing a version tag (e.g. `v1.6.3`) publishes a GitHub Release with the APK committed at the repository root.
 
 The backend runs entirely on Firebase's free **Spark** plan (Authentication and Cloud Firestore, no Cloud Functions). Firestore security rules are deployed with the Firebase CLI:
 
